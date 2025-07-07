@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analisar Sistema Dinâmico</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #eef2f5;
+      padding: 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: white;
+      padding: 25px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 15px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    .resultado {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #e9ffe6;
+      border-left: 5px solid #28a745;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Analisar Sistema Dinâmico</h1>
+    <form method="POST" action="/analisar">
+      <label for="entrada">Digite os parâmetros ou equações:</label>
+      <input type="text" id="entrada" name="entrada" required />
+      <button type="submit">Analisar</button>
+    </form>
+
+    {% if resultado %}
+      <div class="resultado">
+        <strong>Resultado:</strong> {{ resultado }}
+      </div>
+    {% endif %}
+  </div>
+</body>
+</html>

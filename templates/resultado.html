@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Função de Transferência</title>
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script id="MathJax-script" async
+          src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+  </script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background-color: #f0f2f5;
+      text-align: center;
+    }
+    h2 {
+      margin-bottom: 20px;
+    }
+    .math-container {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      display: inline-block;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      font-size: 1.5rem;
+    }
+    a {
+      display: inline-block;
+      margin-top: 30px;
+      color: #007BFF;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <h2>Função de Transferência</h2>
+  <div class="math-container">
+    $$
+      {{ ft_latex }}
+    $$
+  </div>
+
+  <a href="{{ url_for('simulador') }}">&#8592; Voltar ao simulador</a>
+</body>
+</html>

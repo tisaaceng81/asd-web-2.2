@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Perfil do Usuário - Analisador de Sistemas Dinâmicos</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f2f5;
+      padding: 20px;
+    }
+    .content {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .info {
+      margin-bottom: 20px;
+      font-size: 18px;
+    }
+    a {
+      display: inline-block;
+      margin-top: 15px;
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: white;
+      text-decoration: none;
+      border-radius: 5px;
+    }
+    a:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div class="content">
+    <h1>Perfil do Usuário</h1>
+    <div class="info"><strong>Nome:</strong> {{ usuario.nome }}</div>
+    <div class="info"><strong>Email:</strong> {{ email }}</div>
+
+    <a href="{{ url_for('alterar_senha') }}">Alterar Senha</a><br>
+    <a href="{{ url_for('painel') }}">Voltar ao Painel</a>
+  </div>
+</body>
+</html>

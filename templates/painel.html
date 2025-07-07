@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel do Usuário - Analisador de Sistemas Dinâmicos</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f2f5;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .content {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .logout-button {
+      margin-top: 20px;
+      background-color: #dc3545;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .logout-button:hover {
+      background-color: #a71d2a;
+    }
+    .option-button {
+      margin: 10px;
+      padding: 10px 20px;
+      border-radius: 5px;
+      color: white;
+      text-decoration: none;
+      font-size: 16px;
+      display: inline-block;
+    }
+    .perfil { background-color: #007bff; }
+    .senha  { background-color: #17a2b8; }
+    .sim    { background-color: #6c757d; }
+    .option-button:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="content">
+    <h1>Bem-vindo ao Painel do Usuário</h1>
+    <p>Aqui você poderá acessar as funcionalidades do sistema.</p>
+
+    <div style="margin-top: 20px;">
+      <a href="{{ url_for('perfil') }}" class="option-button perfil">Perfil</a>
+      <a href="{{ url_for('alterar_senha') }}" class="option-button senha">Alterar Senha</a>
+      <a href="{{ url_for('simulador') }}" class="option-button sim">Simulador</a>
+    </div>
+
+    <!-- Botão de logout -->
+    <a href="{{ url_for('logout') }}" class="logout-button">Sair</a>
+  </div>
+</body>
+</html>

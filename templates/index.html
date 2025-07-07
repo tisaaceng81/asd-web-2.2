@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analisador de Sistemas Dinâmicos</title>
+
+  <!-- MathJax para LaTeX -->
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script id="MathJax-script" async
+          src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+  </script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding-bottom: 60px;
+    }
+
+    nav {
+      background-color: #f0f0f0;
+      padding: 15px;
+      text-align: center;
+    }
+
+    nav a {
+      margin: 0 15px;
+      text-decoration: none;
+      color: #333;
+      font-weight: bold;
+    }
+
+    nav a:hover {
+      color: #007BFF;
+    }
+
+    footer {
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      text-align: center;
+      font-size: small;
+      color: gray;
+      padding: 10px;
+      background-color: #f9f9f9;
+    }
+
+    .logo {
+      display: block;
+      margin: 100px auto 50px auto;
+      max-width: 200px;
+    }
+
+    h1 {
+      text-align: center;
+      margin-top: 50px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navegação -->
+  <nav>
+    <a href="{{ url_for('home') }}">Início</a>
+    <a href="{{ url_for('login') }}">Login</a>
+    <a href="{{ url_for('cadastro') }}">Cadastro</a>
+
+    {% if usuario_logado %}
+      <a href="{{ url_for('painel') }}">Painel</a>
+      <a href="{{ url_for('simulador') }}">Simulador</a>
+      {% if admin %}
+        <a href="{{ url_for('admin') }}">Admin</a>
+      {% endif %}
+      <a href="{{ url_for('logout') }}">Sair</a>
+    {% endif %}
+  </nav>
+
+  <!-- Título e logo -->
+  <h1>Analisador de Sistemas Dinâmicos</h1>
+  <img src="{{ url_for('static', filename='logo.jpg') }}" alt="Logo Automação e Controle" class="logo">
+
+  <!-- Rodapé -->
+  <footer>
+    Desenvolvido por Tiago Carneiro
+  </footer>
+</body>
+</html>

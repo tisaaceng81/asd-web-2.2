@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel do Administrador - Aprovação de Usuários</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f9f9f9;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .user-list {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+    }
+    .user-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #ddd;
+    }
+    .user-item:last-child {
+      border-bottom: none;
+    }
+    form {
+      margin: 0;
+    }
+    button {
+      background-color: #28a745;
+      border: none;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+    .flash-message {
+      max-width: 600px;
+      margin: 10px auto;
+      padding: 10px;
+      background-color: #d4edda;
+      border: 1px solid #c3e6cb;
+      color: #155724;
+      border-radius: 5px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Painel do Administrador</h1>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-message">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="user-list">
+    {% if usuarios %}
+      {% for email, dados in usuarios.items() %}
+        <div class="user-item">
+          <span>{{ dados['nome'] }} ({{ email }})</span>
+          <form method="POST" action="{{ url_for('admin') }}">
+            <input type="hidden" name="email" value="{{ email }}" />
+            <button type="submit">Aprovar</button>
+          </form>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p style="text-align:center;">Nenhum usuário para aprovação.</p>
+    {% endif %}
+  </div>
+
+</body>
+</html>
