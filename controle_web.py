@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+
+     from flask import Flask, render_template, request, redirect, url_for, flash, session
 import json
 import os
 import matplotlib.pyplot as plt
@@ -19,10 +20,7 @@ def flatten_and_convert(lst):
         if hasattr(c, '__iter__') and not isinstance(c, (str, bytes)):
             result.extend(flatten_and_convert(c))
         else:
-            try:
-                result.append(float(c))
-            except Exception as e:
-                raise Exception(f"Erro convertendo coeficiente: {c} ({e})")
+            result.append(sp.sympify(c))
     return result
 
 def pad_coeffs(num_coeffs, den_coeffs):
@@ -36,46 +34,44 @@ def pad_coeffs(num_coeffs, den_coeffs):
 
 def parse_edo(edo_str, entrada_str, saida_str):
     t = sp.symbols('t', real=True)
-    x = sp.Function(saida_str)(t)
-    F = sp.Function(entrada_str)(t)
+    y = sp.Function(saida_str)(t)
+    u = sp.Function(entrada_str)(t)
 
     eq_str = edo_str.replace('diff', 'sp.Derivative')
     if '=' in eq_str:
         lhs, rhs = eq_str.split('=')
         eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
-    local_dict = {
-        'sp': sp, 't': t,
-        entrada_str: F, saida_str: x,
-        'F': F, 'x': x,
-        str(F): F, str(x): x
-    }
+    local_dict = {"sp": sp, "t": t, entrada_str: u, saida_str: y, str(u): u, str(y): y}
 
     eq = sp.sympify(eq_str, locals=local_dict)
 
-    Xs, Fs = sp.symbols('Xs Fs')
+    Ys, Us = sp.symbols('Ys Us')
     expr_laplace = eq
-    for d in expr_laplace.atoms(sp.Derivative):
+    for d in eq.atoms(sp.Derivative):
         ordem = d.derivative_count
         func = d.expr
-        if func == x:
-            expr_laplace = expr_laplace.subs(d, s**ordem * Xs)
-        elif func == F:
-            expr_laplace = expr_laplace.subs(d, s**ordem * Fs)
+        if func == y:
+            expr_laplace = expr_laplace.subs(d, s**ordem * Ys)
+        elif func == u:
+            expr_laplace = expr_laplace.subs(d, s**ordem * Us)
 
-    expr_laplace = expr_laplace.subs({x: Xs, F: Fs})
+    expr_laplace = expr_laplace.subs({y: Ys, u: Us})
     lhs = expr_laplace
-    coef_Xs = lhs.coeff(Xs)
-    resto = lhs - coef_Xs * Xs
-    Ls_expr = -resto / coef_Xs
-    Ls_expr = sp.simplify(Ls_expr.subs(Fs, 1))
+    coef_Ys = lhs.coeff(Ys)
+    resto = lhs - coef_Ys * Ys
+    Ls_expr = -resto / coef_Ys
+    Ls_expr = sp.simplify(Ls_expr.subs(Us, 1))
 
     num, den = sp.fraction(Ls_expr)
-    num_coeffs = [float(c.evalf()) for c in sp.Poly(num, s).all_coeffs()]
-    den_coeffs = [float(c.evalf()) for c in sp.Poly(den, s).all_coeffs()]
+    num_coeffs = sp.Poly(num, s).all_coeffs()
+    den_coeffs = sp.Poly(den, s).all_coeffs()
     num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
 
-    FT = control.TransferFunction(num_coeffs, den_coeffs)
+    num_coeffs_eval = [float(c.evalf()) for c in num_coeffs]
+    den_coeffs_eval = [float(c.evalf()) for c in den_coeffs]
+
+    FT = control.TransferFunction(num_coeffs_eval, den_coeffs_eval)
     return Ls_expr, FT
 
 def ft_to_latex(expr):
@@ -112,7 +108,7 @@ def malha_fechada_tf(Gp, Gc):
     return control.feedback(Gp * Gc, 1)
 
 def tabela_routh(coeficientes):
-    coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
+    coeficientes = [float(c) for c in coeficientes]
     n = len(coeficientes)
     m = (n + 1) // 2
     routh = np.zeros((n, m))
@@ -170,6 +166,7 @@ def plot_polos_zeros(FT):
     plt.savefig(caminho)
     plt.close()
     return caminho
+
 
 # === ROTAS ===
 
