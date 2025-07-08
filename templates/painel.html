@@ -1,73 +1,165 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Painel do Usuário - Analisador de Sistemas Dinâmicos</title>
-  <style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Painel do Usuário - Analisador de Sistemas Dinâmicos</title>
+<style>
     body {
-      font-family: Arial, sans-serif;
-      background-color: #f0f2f5;
-      padding: 20px;
+        font-family: Arial, sans-serif;
+        background-color: #f0f2f5;
+        margin: 0; /* Removido para navbar fixa */
+        padding: 0; /* Removido para navbar fixa */
+        display: flex;
+        flex-direction: column; /* Adicionado para layout com navbar fixa */
+        min-height: 100vh;
     }
-    h1 {
-      text-align: center;
-      margin-bottom: 30px;
+    /* Estilos da barra de navegação (navbar) */
+    .navbar {
+        background-color: #333;
+        overflow: hidden;
+        width: 100%;
+        position: fixed; /* Navbar fixa no topo */
+        top: 0;
+        left: 0;
+        z-index: 1000;
+        border-radius: 0;
+        display: flex; /* Para alinhar itens */
+        justify-content: flex-start; /* Alinha itens à esquerda por padrão */
+        align-items: center;
+        padding: 0 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    .navbar a {
+        display: block;
+        color: #f2f2f2;
+        text-align: center;
+        padding: 14px 16px;
+        text-decoration: none;
+        transition: background-color 0.3s ease, color 0.3s ease;
+    }
+    .navbar a:hover {
+        background-color: #ddd;
+        color: black;
+    }
+    .navbar a.right {
+        margin-left: auto; /* Empurra os itens para a direita */
+    }
+    /* Conteúdo principal da página */
+    .content-wrapper {
+        flex-grow: 1; /* Permite que o wrapper ocupe o espaço restante */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        margin-top: 70px; /* Espaço para a navbar fixa */
+        padding: 20px;
     }
     .content {
-      max-width: 800px;
-      margin: 0 auto;
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-      text-align: center;
+        max-width: 800px;
+        width: 100%; /* Garante que o conteúdo ocupe a largura disponível no wrapper */
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    h1 {
+        text-align: center;
+        margin-bottom: 30px;
+        color: #333; /* Cor consistente */
+    }
+    p {
+        color: #666;
     }
     .logout-button {
-      margin-top: 20px;
-      background-color: #dc3545;
-      border: none;
-      color: white;
-      padding: 10px 20px;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 16px;
-      text-decoration: none;
-      display: inline-block;
+        margin-top: 20px;
+        background-color: #dc3545;
+        border: none;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+        text-decoration: none;
+        display: inline-block;
+        transition: background-color 0.3s ease; /* Transição para hover */
     }
     .logout-button:hover {
-      background-color: #a71d2a;
+        background-color: #a71d2a;
     }
     .option-button {
-      margin: 10px;
-      padding: 10px 20px;
-      border-radius: 5px;
-      color: white;
-      text-decoration: none;
-      font-size: 16px;
-      display: inline-block;
+        margin: 10px;
+        padding: 10px 20px;
+        border-radius: 5px;
+        color: white;
+        text-decoration: none;
+        font-size: 16px;
+        display: inline-block;
+        transition: opacity 0.3s ease, background-color 0.3s ease; /* Transição para hover */
     }
     .perfil { background-color: #007bff; }
-    .senha  { background-color: #17a2b8; }
-    .sim    { background-color: #6c757d; }
+    .senha { background-color: #17a2b8; }
+    .sim { background-color: #6c757d; }
     .option-button:hover {
-      opacity: 0.9;
+        opacity: 0.9;
     }
-  </style>
+    /* Estilos para mensagens flash */
+    .messages {
+        list-style-type: none;
+        padding: 0;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .messages li {
+        padding: 10px;
+        margin-bottom: 5px;
+        border-radius: 5px;
+        font-weight: bold;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+        max-width: 800px;
+    }
+    .messages .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .messages .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    .messages .danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .messages .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+</style>
 </head>
 <body>
-  <div class="content">
-    <h1>Bem-vindo ao Painel do Usuário</h1>
-    <p>Aqui você poderá acessar as funcionalidades do sistema.</p>
-
-    <div style="margin-top: 20px;">
-      <a href="{{ url_for('perfil') }}" class="option-button perfil">Perfil</a>
-      <a href="{{ url_for('alterar_senha') }}" class="option-button senha">Alterar Senha</a>
-      <a href="{{ url_for('simulador') }}" class="option-button sim">Simulador</a>
+    <div class="navbar">
+        <a href="{{ url_for('painel') }}">Painel</a>
+        <a href="{{ url_for('simulador') }}">Simulador</a>
+        <a href="{{ url_for('perfil') }}">Perfil</a>
+        {% if admin %} <a href="{{ url_for('admin') }}">Admin</a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}" class="right">Sair</a>
     </div>
 
-    <!-- Botão de logout -->
-    <a href="{{ url_for('logout') }}" class="logout-button">Sair</a>
-  </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="messages">
+        {% for category, message in messages %}
+          <li class="{{ category }}">{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <div class="content-wrapper">
+        <div class="content">
+            <h1>Bem-vindo ao Painel do Usuário</h1>
+            <p>Aqui você poderá acessar as funcionalidades do sistema.</p>
+
+            <div style="margin-top: 20px;">
+                <a href="{{ url_for('perfil') }}" class="option-button perfil">Perfil</a>
+                <a href="{{ url_for('alterar_senha') }}" class="option-button senha">Alterar Senha</a>
+                <a href="{{ url_for('simulador') }}" class="option-button sim">Simulador</a>
+            </div>
+
+            <a href="{{ url_for('logout') }}" class="logout-button">Sair</a>
+        </div>
+    </div>
 </body>
 </html>
