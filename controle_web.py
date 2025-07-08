@@ -144,8 +144,8 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
 
     plt.figure(figsize=(8, 4))
     plt.plot(t, y, label='Resposta ao Degrau')
-    plt.xlabel('Tempo (s)' if rotacao != 90 else 'F (s)')
-    plt.ylabel('Tempo (s)' if rotacao != 90 else 'X (s)')
+    plt.xlabel('Tempo (s)' if rotacao != 90 else 'Saída')
+    plt.ylabel('Saída' if rotacao != 90 else 'Tempo (s)')
     plt.title(nome)
     plt.grid(True)
     plt.legend()
