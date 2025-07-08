@@ -20,7 +20,9 @@ def flatten_and_convert(lst):
     """
     result = []
     for c in lst:
-        if hasattr(c, 'iter') and not isinstance(c, (str, bytes)):
+        if isinstance(c, (list, tuple, np.ndarray)):
+            result.extend(flatten_and_convert(c))
+        elif hasattr(c, 'iter') and not isinstance(c, (str, bytes)):
             result.extend(flatten_and_convert(c))
         else:
             try:
@@ -62,11 +64,9 @@ def parse_edo(edo_str, entrada_str, saida_str):
     }
     
     # Adiciona as derivadas de X e F ao local_dict para reconhecimento pelo sympify
-    # Suporta até 4ª derivada, pode ser ajustado conforme a necessidade
     for i in range(1, 5):
         local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(X, t, i)
         local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F, t, i)
-    # Adiciona também a primeira derivada sem o número explícito (diff(y,t))
     local_dict[f'diff({saida_str},t)'] = sp.Derivative(X, t, 1)
     local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1)
 
@@ -107,16 +107,12 @@ def parse_edo(edo_str, entrada_str, saida_str):
         coef_Xs = expr_laplace.coeff(Xs)
         resto = expr_laplace - coef_Xs * Xs
         
-        # Tenta resolver explicitamente para Xs em termos de Fs para robustez
         solution_dict = sp.solve(expr_laplace, Xs)
         if solution_dict:
-            # Pega a primeira solução se houver múltiplas (comum em sistemas lineares, deve ser única)
             solution = solution_dict[0]
-            Ls_expr = sp.simplify(solution.subs(Fs, 1)) # Assume Fs = 1 para a FT
+            Ls_expr = sp.simplify(solution.subs(Fs, 1))
         else:
-            # Caso o solve falhe, tenta a abordagem original de isolamento
             if Fs not in resto.free_symbols:
-                # Se não houver Fs no termo restante, a FT pode ser inválida ou constante
                 raise ValueError("Não foi possível identificar a relação de entrada/saída na EDO. Verifique se a variável de entrada está presente.")
             Ls_expr = -resto / coef_Xs
             Ls_expr = sp.simplify(Ls_expr.subs(Fs, 1))
@@ -135,7 +131,6 @@ def parse_edo(edo_str, entrada_str, saida_str):
         subs_dict = {sym: 1.0 for sym in simbolos_num + simbolos_den}
         num_eval = num.subs(subs_dict)
         den_eval = den.subs(subs_dict)
-        # Informa ao usuário sobre a substituição
         flash(f"Aviso: Coeficientes simbólicos '{', '.join(map(str, simbolos_num + simbolos_den))}' foram detectados e substituídos por 1.0 para a geração dos gráficos e parâmetros PID. Para resultados exatos, forneça apenas coeficientes numéricos na EDO ou revise a sintaxe.", 'warning')
     else:
         num_eval = num
@@ -148,15 +143,15 @@ def parse_edo(edo_str, entrada_str, saida_str):
     except TypeError:
         raise ValueError("Não foi possível converter os coeficientes da Função de Transferência para valores numéricos. Certifique-se de que todos os coeficientes sejam numéricos após a análise da EDO.")
 
-    # Remove coeficientes zero iniciais para evitar FTs improprias (ex: 0s^2 + 2s + 1)
+    # Remove coeficientes zero iniciais
     while len(den_coeffs) > 1 and den_coeffs[0] == 0:
         den_coeffs.pop(0)
-        if num_coeffs and num_coeffs[0] == 0: # Garante que o numerador também seja ajustado se necessário
+        if num_coeffs and num_coeffs[0] == 0:
             num_coeffs.pop(0)
-        else: # Se o numerador for mais curto, preenche com zero
+        else:
             num_coeffs = [0] * (len(den_coeffs) - len(num_coeffs)) + num_coeffs
     
-    # Preenche os coeficientes para que numerador e denominador tenham o mesmo comprimento
+    # Preenche os coeficientes
     num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
     
     if not den_coeffs or all(c == 0 for c in den_coeffs):
@@ -192,33 +187,28 @@ def estima_LT(t, y):
     y_final = y[-1]
     y_inicial = y[0]
 
-    # Lidar com casos onde a resposta não varia significativamente
     if abs(y_final - y_inicial) < 1e-6:
-        return 0.01, 0.01 # Retorna valores pequenos para evitar divisão por zero ou erros
+        return 0.01, 0.01
 
-    # Normalizar a resposta entre 0 e 1 (ou -1 e 0 se for decrescente)
     y_scaled = (y - y_inicial) / (y_final - y_inicial)
 
     try:
-        # L - Tempo em que a resposta atinge 1% da variação total
         indice_inicio = next(i for i, v in enumerate(y_scaled) if v > 0.01 or v < -0.01)
         L = t[indice_inicio]
     except StopIteration:
-        L = 0.01 # Se não atingir 1%, assume um pequeno atraso
+        L = 0.01
 
-    # T - Tempo em que a resposta atinge 63% da variação total, subtraído de L
     y_63_target = 0.63
     try:
         indice_63 = next(i for i, v in enumerate(y_scaled) if v >= y_63_target)
         T = t[indice_63] - L
     except StopIteration:
-        T = 0.01 # Se não atingir 63%, assume um pequeno tempo de atraso
+        T = 0.01
 
-    return (L if L >= 0 else 0.01), (T if T >= 0 else 0.01) # Garante valores positivos e mínimos
+    return (L if L >= 0 else 0.01), (T if T >= 0 else 0.01)
 
 def sintonia_ziegler_nichols(L, T):
     """Calcula os parâmetros PID (Kp, Ki, Kd) usando as regras de Ziegler-Nichols."""
-    # Evita divisão por zero ou valores muito pequenos que levariam a Kp/Ti muito grandes
     if L == 0: L = 1e-6
     if T == 0: T = 1e-6
     
@@ -232,7 +222,7 @@ def sintonia_ziegler_nichols(L, T):
 
 def cria_pid_tf(Kp, Ki, Kd):
     """Cria a Função de Transferência de um controlador PID."""
-    s_tf = control.TransferFunction.s # Usar s do control para criar a FT
+    s_tf = control.TransferFunction.s
     return Kp + Ki / s_tf + Kd * s_tf
 
 def malha_fechada_tf(Gp, Gc):
@@ -243,25 +233,27 @@ def tabela_routh(coeficientes):
     """
     Gera a tabela de Routh-Hurwitz para análise de estabilidade.
     """
-    # Garante que os coeficientes são numéricos
-    coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
+    try:
+        coeficientes = [float(c) for c in coeficientes]
+    except TypeError as e:
+        raise ValueError(f"Erro ao processar coeficientes para a Tabela de Routh. Verifique se todos os coeficientes são numéricos. Detalhes: {e}. Coeficientes recebidos: {coeficientes}")
+    except Exception as e:
+        raise ValueError(f"Erro inesperado ao processar coeficientes para a Tabela de Routh. Detalhes: {e}. Coeficientes recebidos: {coeficientes}")
+
     n = len(coeficientes)
     
     if n == 0 or all(c == 0 for c in coeficientes):
         flash("Aviso: Coeficientes do denominador são todos zero ou vazios para a Tabela de Routh.", 'warning')
-        return np.array([[]]) # Retorna tabela vazia se não houver coeficientes válidos
+        return np.array([[]])
 
-    # Remove zeros iniciais se houver (ex: 0s^2 + 2s + 1)
-    # Isso é importante para sistemas onde o grau do denominador pode não ser o maior termo
-    while n > 0 and abs(coeficientes[0]) < 1e-9: # Usar uma pequena tolerância para zero
+    while n > 0 and abs(coeficientes[0]) < 1e-9:
         coeficientes.pop(0)
         n = len(coeficientes)
     
     if n == 0:
-        flash("Aviso: Todos os coeficientes do denominador se anularam após a remoção de zeros iniciais.", 'warning')
+        flash("Aviso: Todos os coeficientes do denominador se anularam após a remoção de zeros iniciaos.", 'warning')
         return np.array([[]])
 
-    # Se apenas um coeficiente restar e for zero, também é inválido
     if n == 1 and abs(coeficientes[0]) < 1e-9:
         flash("Aviso: O único coeficiente do denominador restante é zero.", 'warning')
         return np.array([[]])
@@ -269,16 +261,13 @@ def tabela_routh(coeficientes):
     m = (n + 1) // 2
     routh = np.zeros((n, m))
     
-    # Preenche as duas primeiras linhas da tabela
     routh[0, :len(coeficientes[::2])] = coeficientes[::2]
     if n > 1:
         routh[1, :len(coeficientes[1::2])] = coeficientes[1::2]
     
-    # Calcula as linhas restantes
     for i in range(2, n):
-        # Lida com o caso de zero ou quase zero na primeira coluna substituindo por um pequeno epsilon
         if abs(routh[i - 1, 0]) < 1e-9:
-            routh[i - 1, 0] = 1e-9 # Usar um valor muito pequeno para evitar divisão por zero
+            routh[i - 1, 0] = 1e-9
             flash(f"Aviso: Zero ou valor muito próximo de zero detectado na primeira coluna da linha {i-1} da Tabela de Routh. Substituindo por um pequeno valor (1e-9) para continuar o cálculo. Isso pode indicar polos no eixo imaginário ou casos especiais de estabilidade.", 'warning')
 
         for j in range(m - 1):
@@ -287,9 +276,8 @@ def tabela_routh(coeficientes):
             c = routh[i - 2, j + 1]
             d = routh[i - 1, j + 1]
             
-            # Evita divisão por zero explícita
-            if abs(b) < 1e-9: # Se o divisor for muito pequeno
-                routh[i, j] = 0 # Considera como 0 para evitar NaN/Inf
+            if abs(b) < 1e-9:
+                routh[i, j] = 0
             else:
                 routh[i, j] = (b * c - a * d) / b
                 
@@ -303,7 +291,6 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
     t = np.array(t)
     y = np.array(y)
 
-    # Remove NaN e Inf para evitar erros de plotagem
     valid_indices = np.isfinite(t) & np.isfinite(y)
     t = t[valid_indices]
     y = y[valid_indices]
@@ -314,17 +301,14 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
 
     y = y + deslocamento
 
-    # Aplica rotação e deslocamento
     if rotacao == 180:
         t = -t[::-1]
         y = -y[::-1]
     elif rotacao == 90:
-        # Troca e inverte eixos para 90 graus
-        t, y = y, t # Troca os eixos
-        t = -t # Inverte o novo eixo "x" para simular rotação no sentido anti-horário
-        y = y - y.min() # Garante que o novo eixo "y" comece de zero ou positivo
+        t, y = y, t
+        t = -t
+        y = y - y.min()
     
-    # Normaliza o tempo e a saída para que comecem em zero ou positivo
     if t.size > 0 and min(t) < 0:
         t = t - min(t)
     if y.size > 0 and min(y) < 0:
@@ -332,8 +316,8 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
 
     plt.figure(figsize=(8, 4))
     plt.plot(t, y, label='Resposta ao Degrau')
-    plt.xlabel('Tempo (s)' if rotacao not in [90, 270] else 'Saída') # Ajusta label do eixo x
-    plt.ylabel('Saída' if rotacao not in [90, 270] else 'Tempo (s)') # Ajusta label do eixo y
+    plt.xlabel('Tempo (s)' if rotacao not in [90, 270] else 'Saída')
+    plt.ylabel('Saída' if rotacao not in [90, 270] else 'Tempo (s)')
     plt.title(nome)
     plt.grid(True)
     plt.legend()
@@ -344,9 +328,9 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
         plt.savefig(caminho)
     except Exception as e:
         print(f"Erro ao salvar o gráfico '{nome}': {e}")
-        caminho = None # Retorna None se não conseguir salvar
+        caminho = None
     finally:
-        plt.close() # Sempre fecha o plot para liberar memória
+        plt.close()
     return caminho
 
 def plot_polos_zeros(FT):
@@ -361,10 +345,8 @@ def plot_polos_zeros(FT):
 
     fig, ax = plt.subplots()
     
-    # Plota polos (marcadores 'x', vermelhos)
     if poles.size > 0:
         ax.scatter(np.real(poles), np.imag(poles), marker='x', color='red', label='Polos', s=100)
-    # Plota zeros (marcadores 'o', azuis)
     if zeros.size > 0:
         ax.scatter(np.real(zeros), np.imag(zeros), marker='o', color='blue', label='Zeros', s=100)
         
@@ -376,7 +358,6 @@ def plot_polos_zeros(FT):
     ax.legend()
     ax.grid(True)
     
-    # Ajusta os limites do gráfico dinamicamente
     all_coords_real = np.concatenate((np.real(poles), np.real(zeros)))
     all_coords_imag = np.concatenate((np.imag(poles), np.imag(zeros)))
 
@@ -384,13 +365,12 @@ def plot_polos_zeros(FT):
         min_re, max_re = all_coords_real.min(), all_coords_real.max()
         min_im, max_im = all_coords_imag.min(), all_coords_imag.max()
 
-        # Adiciona uma margem para melhor visualização
         margin_re = max(0.5, (max_re - min_re) * 0.1)
         margin_im = max(0.5, (max_im - min_im) * 0.1)
 
         ax.set_xlim(min_re - margin_re, max_re + margin_re)
         ax.set_ylim(min_im - margin_im, max_im + margin_im)
-    else: # Caso de FT constante (sem polos/zeros finitos)
+    else:
         ax.set_xlim(-2, 2)
         ax.set_ylim(-2, 2)
 
@@ -409,7 +389,8 @@ def plot_polos_zeros(FT):
 @app.route('/')
 def home():
     user_email = session.get('usuario_logado')
-    return render_template('index.html', user_email=user_email)
+    is_admin = session.get('is_admin', False) 
+    return render_template('index.html', user_email=user_email, admin=is_admin)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -427,7 +408,7 @@ def login():
             session['usuario_logado'] = email
             session['is_admin'] = True
             flash('Login de administrador realizado com sucesso!', 'success')
-            return redirect(url_for('admin'))
+            return redirect(url_for('admin')) # Admin vai para o painel admin
 
         # Usuários comuns
         if email in usuarios and usuarios[email]['senha'] == senha:
@@ -435,7 +416,7 @@ def login():
                 session['usuario_logado'] = email
                 session['is_admin'] = False
                 flash('Login realizado com sucesso!', 'success')
-                return redirect(url_for('painel'))
+                return redirect(url_for('painel')) # Usuário comum vai para o painel de usuário
             else:
                 flash('Seu cadastro ainda não foi aprovado.', 'warning')
                 return redirect(url_for('login'))
@@ -490,7 +471,6 @@ def admin():
         else:
             flash('Arquivo de usuários não encontrado.', 'warning')
 
-    # Mostrar apenas usuários não aprovados
     if os.path.exists('usuarios.json'):
         with open('usuarios.json', 'r') as f:
             usuarios = json.load(f)
@@ -498,7 +478,7 @@ def admin():
     else:
         nao_aprovados = {}
 
-    return render_template('admin.html', usuarios=nao_aprovados)
+    return render_template('admin.html', usuarios=nao_aprovados, admin=True)
 
 @app.route('/painel')
 def painel():
@@ -523,7 +503,6 @@ def simulador():
 
     email = session['usuario_logado']
 
-    # Verifica se o usuário está aprovado (apenas para usuários comuns)
     if email != 'tisaaceng@gmail.com':
         if os.path.exists('usuarios.json'):
             with open('usuarios.json', 'r') as f:
@@ -550,21 +529,13 @@ def simulador():
                 Ls_expr, FT = parse_edo(edo, entrada, saida)
                 ft_latex = ft_to_latex(Ls_expr)
                 
-                # Resposta ao Degrau (Malha Aberta)
                 t_open, y_open = resposta_degrau(FT)
-                
-                # Estima L e T e calcula parâmetros PID
                 L, T = estima_LT(t_open, y_open)
                 Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
-                
-                # Cria controlador PID e FT de Malha Fechada
                 pid = cria_pid_tf(Kp, Ki, Kd)
                 mf = malha_fechada_tf(FT, pid)
-                
-                # Resposta ao Degrau (Malha Fechada)
                 t_closed, y_closed = resposta_degrau(mf)
 
-                # Função auxiliar para converter FT de control para SymPy
                 def tf_to_sympy_tf(tf_control_obj):
                     num_list = tf_control_obj.num[0][0]
                     den_list = tf_control_obj.den[0][0]
@@ -573,16 +544,13 @@ def simulador():
                     den_poly = sum(coef * s**(len(den_list) - i - 1) for i, coef in enumerate(den_list))
                     return num_poly / den_poly
 
-                # Converte FTs para SymPy para exibição em LaTeX
                 expr_pid = sp.simplify(tf_to_sympy_tf(pid))
                 expr_mf = sp.simplify(tf_to_sympy_tf(mf))
 
-                # Salva os gráficos
                 img_resposta_aberta = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', rotacao=0)
                 img_resposta_fechada = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', rotacao=0)
                 img_pz = plot_polos_zeros(FT)
 
-                # Coeficientes do denominador para a Tabela de Routh
                 den_coeffs = flatten_and_convert(FT.den[0])
                 routh_table = tabela_routh(den_coeffs)
 
@@ -620,7 +588,9 @@ def perfil():
         usuarios = {}
 
     usuario = usuarios.get(email)
-    return render_template('perfil.html', usuario=usuario, email=email)
+    is_admin = session.get('is_admin', False)
+    return render_template('perfil.html', usuario=usuario, email=email, admin=is_admin)
+
 
 @app.route('/alterar_senha', methods=['GET', 'POST'])
 def alterar_senha():
@@ -663,16 +633,16 @@ def alterar_senha():
         flash('Senha alterada com sucesso!', 'success')
         return redirect(url_for('perfil'))
 
-    return render_template('alterar_senha.html')
+    is_admin = session.get('is_admin', False)
+    return render_template('alterar_senha.html', admin=is_admin)
 
 @app.route('/funcao_transferencia')
 def funcao_transferencia():
-    # Esta rota pode não ser mais necessária se a FT já é exibida no simulador
-    # Mas a mantive para preservar as rotas existentes
-    ft_latex = session.get('ft_latex') # Verifica se a FT foi armazenada na sessão
+    ft_latex = session.get('ft_latex')
     if not ft_latex:
         ft_latex = "Função de Transferência não disponível ou não calculada recentemente."
-    return render_template('transferencia.html', ft_latex=ft_latex)
+    is_admin = session.get('is_admin', False)
+    return render_template('transferencia.html', ft_latex=ft_latex, admin=is_admin)
 
 
 # === EXECUÇÃO PRINCIPAL ===
