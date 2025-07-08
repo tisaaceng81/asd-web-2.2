@@ -8,16 +8,12 @@ import control
 from control.matlab import step
 from sympy.abc import s # Importa a variável simbólica 's' globalmente para SymPy
 
-# DEFININDO O CAMINHO RAIZ DA APLICAÇÃO DIRETAMENTE
-# ESTE É O CAMINHO ONDE SUA PASTA 'Projeto2' DEVE ESTAR NO SEU CELULAR
-# PARA QUE O PYDROID 3 TENHA ACESSO TOTAL DE ESCRITA.
-BASE_DIR_FORCADO = '/storage/emulated/0/Android/data/ru.iiec.pydroid3/files/Projeto2'
+# REMOVIDO: A variável BASE_DIR_FORCADO não é mais necessária e causava erro no Render.
 
-app = Flask(__name__, root_path=BASE_DIR_FORCADO) # FORÇA O FLASK A USAR ESTE CAMINHO
+app = Flask(__name__) # Flask vai descobrir o caminho raiz correto automaticamente no Render
 app.secret_key = 'sua_chave_secreta' # Chave secreta para segurança da sessão do Flask
 
-# REMOVIDO: A LINHA DEBUG ANTERIOR PARA EVITAR CONFUSÃO.
-# Agora o caminho está sendo forçado, não apenas debugado.
+# REMOVIDO: A LINHA DEBUG não é mais necessária aqui e estava causando confusão.
 
 # =============== FUNÇÕES AUXILIARES ===============
 
