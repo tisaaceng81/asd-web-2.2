@@ -1,88 +1,161 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Analisador de Sistemas Dinâmicos</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home - Analisador de Sistemas Dinâmicos</title>
 
-  <!-- MathJax para LaTeX -->
-  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-  <script id="MathJax-script" async
-          src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
-  </script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async
+            src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+    </script>
 
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding-bottom: 60px;
-    }
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0; /* Removido padding-bottom padrão para navbar fixa */
+            background-color: #f4f4f4; /* Cor de fundo consistente */
+            display: flex;
+            flex-direction: column; /* Para layout com navbar fixa no topo */
+            min-height: 100vh; /* Garante que o body ocupe a altura total da viewport */
+        }
 
-    nav {
-      background-color: #f0f0f0;
-      padding: 15px;
-      text-align: center;
-    }
+        /* Navbar estilo unificado */
+        .navbar {
+            background-color: #333; /* Cor de fundo escura */
+            overflow: hidden;
+            width: 100%;
+            position: fixed; /* Navbar fixa no topo */
+            top: 0;
+            left: 0;
+            z-index: 1000; /* Garante que a navbar fique acima de outros elementos */
+            border-radius: 0; /* Remove bordas arredondadas para navbar fixa */
+            display: flex; /* Flexbox para alinhar itens */
+            justify-content: flex-start; /* Alinha itens à esquerda por padrão */
+            align-items: center; /* Centraliza verticalmente */
+            padding: 0 10px; /* Pequeno padding nas laterais */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2); /* Sombra para destaque */
+        }
 
-    nav a {
-      margin: 0 15px;
-      text-decoration: none;
-      color: #333;
-      font-weight: bold;
-    }
+        .navbar a {
+            display: block;
+            color: #f2f2f2;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            transition: background-color 0.3s ease, color 0.3s ease; /* Transição suave */
+        }
 
-    nav a:hover {
-      color: #007BFF;
-    }
+        .navbar a:hover {
+            background-color: #ddd;
+            color: black;
+        }
 
-    footer {
-      position: fixed;
-      bottom: 0;
-      width: 100%;
-      text-align: center;
-      font-size: small;
-      color: gray;
-      padding: 10px;
-      background-color: #f9f9f9;
-    }
+        .navbar .right {
+            margin-left: auto; /* Empurra os itens à direita para o final */
+        }
 
-    .logo {
-      display: block;
-      margin: 100px auto 50px auto;
-      max-width: 200px;
-    }
+        /* Estilos para o conteúdo abaixo da navbar fixa */
+        .content-offset {
+            padding-top: 70px; /* Ajusta conforme a altura da sua navbar (~50px + margem) */
+            flex-grow: 1; /* Permite que o conteúdo principal ocupe o espaço restante */
+            width: 100%; /* Garante que o conteúdo ocupe a largura total */
+        }
 
-    h1 {
-      text-align: center;
-      margin-top: 50px;
-    }
-  </style>
+        footer {
+            /* Removido position: fixed e width: 100% para footer ao final do conteúdo */
+            text-align: center;
+            font-size: small;
+            color: gray;
+            padding: 20px; /* Mais padding para melhor visualização */
+            background-color: #f9f9f9;
+            margin-top: auto; /* Empurra o footer para o final se o conteúdo for curto */
+            width: 100%; /* Ocupa a largura total */
+            box-sizing: border-box; /* Inclui padding na largura total */
+        }
+
+        .logo {
+            display: block;
+            margin: 50px auto 50px auto; /* Reduzida margem superior para compensar navbar fixa */
+            max-width: 200px;
+            height: auto; /* Garante proporção */
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 30px; /* Ajustado para se adequar à navbar fixa */
+            color: #333;
+        }
+
+        /* Container principal para o conteúdo central */
+        .main-content-wrapper {
+            max-width: 900px; /* Largura máxima para o conteúdo principal */
+            margin: 0 auto; /* Centraliza o wrapper */
+            padding: 20px; /* Padding interno */
+            background-color: #fff; /* Fundo branco para o conteúdo */
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        /* Estilos para mensagens flash */
+        .messages {
+            list-style-type: none;
+            padding: 0;
+            text-align: center;
+            margin-bottom: 20px;
+            margin-top: 20px; /* Ajuste para espaçamento após o título se o wrapper não for usado */
+        }
+        .messages li {
+            padding: 10px;
+            margin-bottom: 5px;
+            border-radius: 5px;
+            font-weight: bold;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            max-width: 800px;
+        }
+        .messages .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .messages .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .messages .danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .messages .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    </style>
 </head>
 <body>
 
-  <!-- Navegação -->
-  <nav>
-    <a href="{{ url_for('home') }}">Início</a>
-    <a href="{{ url_for('login') }}">Login</a>
-    <a href="{{ url_for('cadastro') }}">Cadastro</a>
+    <div class="navbar">
+        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('login') }}">Login</a>
+        <a href="{{ url_for('cadastro') }}">Cadastro</a>
+        {% if admin %} <a href="{{ url_for('admin') }}">Admin</a>
+        {% endif %}
+        {% if user_email %} <a href="{{ url_for('painel') }}">Painel</a>
+            <a href="{{ url_for('perfil') }}">Perfil</a>
+            <a href="{{ url_for('logout') }}" class="right">Sair</a>
+        {% endif %}
+    </div>
 
-    {% if usuario_logado %}
-      <a href="{{ url_for('painel') }}">Painel</a>
-      <a href="{{ url_for('simulador') }}">Simulador</a>
-      {% if admin %}
-        <a href="{{ url_for('admin') }}">Admin</a>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="messages">
+        {% for category, message in messages %}
+          <li class="{{ category }}">{{ message }}</li>
+        {% endfor %}
+        </ul>
       {% endif %}
-      <a href="{{ url_for('logout') }}">Sair</a>
-    {% endif %}
-  </nav>
+    {% endwith %}
 
-  <!-- Título e logo -->
-  <h1>Analisador de Sistemas Dinâmicos</h1>
-  <img src="{{ url_for('static', filename='logo.jpg') }}" alt="Logo Automação e Controle" class="logo">
+    <div class="content-offset">
+        <div class="main-content-wrapper">
+            <h1>Analisador de Sistemas Dinâmicos</h1>
+            <img src="{{ url_for('static', filename='logo.jpg') }}" alt="Logo Automação e Controle" class="logo">
+        </div>
+    </div>
 
-  <!-- Rodapé -->
-  <footer>
-    Desenvolvido por Tiago Carneiro
-  </footer>
+    <footer>
+        Desenvolvido por Tiago Carneiro
+    </footer>
 </body>
 </html>
