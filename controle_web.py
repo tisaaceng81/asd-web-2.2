@@ -9,7 +9,7 @@ from control.matlab import step
 from sympy.abc import s # s já importado, mas reforça que é para a transformada de Laplace
 
 app = Flask(__name__)
-app.secret_key = 'sua_chave_secreta'
+app.secret_key = 'sua_chave_secreta' # Mantenha esta chave secreta e única em produção
 
 # === FUNÇÕES AUXILIARES ===
 
@@ -22,7 +22,7 @@ def flatten_and_convert(lst):
     for c in lst:
         if isinstance(c, (list, tuple, np.ndarray)):
             result.extend(flatten_and_convert(c))
-        elif hasattr(c, 'iter') and not isinstance(c, (str, bytes)):
+        elif hasattr(c, 'iter') and not isinstance(c, (str, bytes)): # Evita iterar sobre strings
             result.extend(flatten_and_convert(c))
         else:
             try:
@@ -64,11 +64,11 @@ def parse_edo(edo_str, entrada_str, saida_str):
     }
     
     # Adiciona as derivadas de X e F ao local_dict para reconhecimento pelo sympify
-    for i in range(1, 5):
+    for i in range(1, 5): # Suporta até a 4ª derivada
         local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(X, t, i)
         local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F, t, i)
-    local_dict[f'diff({saida_str},t)'] = sp.Derivative(X, t, 1)
-    local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1)
+    local_dict[f'diff({saida_str},t)'] = sp.Derivative(X, t, 1) # Para diff(y,t)
+    local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1) # Para diff(u,t)
 
 
     # Prepara a string da EDO para sympify
@@ -146,12 +146,13 @@ def parse_edo(edo_str, entrada_str, saida_str):
     # Remove coeficientes zero iniciais
     while len(den_coeffs) > 1 and den_coeffs[0] == 0:
         den_coeffs.pop(0)
+        # Ajusta o numerador para manter a ordem correta
         if num_coeffs and num_coeffs[0] == 0:
             num_coeffs.pop(0)
-        else:
+        else: # Se o numerador é mais curto, preenche com zeros à esquerda
             num_coeffs = [0] * (len(den_coeffs) - len(num_coeffs)) + num_coeffs
     
-    # Preenche os coeficientes
+    # Preenche os coeficientes para que tenham o mesmo comprimento
     num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
     
     if not den_coeffs or all(c == 0 for c in den_coeffs):
@@ -187,30 +188,32 @@ def estima_LT(t, y):
     y_final = y[-1]
     y_inicial = y[0]
 
-    if abs(y_final - y_inicial) < 1e-6:
+    if abs(y_final - y_inicial) < 1e-6: # Evita divisão por zero se a resposta não muda
         return 0.01, 0.01
 
     y_scaled = (y - y_inicial) / (y_final - y_inicial)
 
     try:
+        # Encontra o primeiro ponto onde a resposta começa a subir (acima de um pequeno limiar)
         indice_inicio = next(i for i, v in enumerate(y_scaled) if v > 0.01 or v < -0.01)
         L = t[indice_inicio]
     except StopIteration:
-        L = 0.01
+        L = 0.01 # Pequeno atraso se não houver mudança significativa
 
     y_63_target = 0.63
     try:
+        # Encontra o primeiro ponto onde a resposta atinge 63% do valor final
         indice_63 = next(i for i, v in enumerate(y_scaled) if v >= y_63_target)
         T = t[indice_63] - L
     except StopIteration:
-        T = 0.01
+        T = 0.01 # Pequena constante de tempo se não atingir 63%
 
     return (L if L >= 0 else 0.01), (T if T >= 0 else 0.01)
 
 def sintonia_ziegler_nichols(L, T):
     """Calcula os parâmetros PID (Kp, Ki, Kd) usando as regras de Ziegler-Nichols."""
-    if L == 0: L = 1e-6
-    if T == 0: T = 1e-6
+    if L == 0: L = 1e-6 # Evita divisão por zero
+    if T == 0: T = 1e-6 # Evita divisão por zero
     
     Kp = 1.2 * T / L
     Ti = 2 * L
@@ -246,12 +249,12 @@ def tabela_routh(coeficientes):
         flash("Aviso: Coeficientes do denominador são todos zero ou vazios para a Tabela de Routh.", 'warning')
         return np.array([[]])
 
-    while n > 0 and abs(coeficientes[0]) < 1e-9:
+    while n > 0 and abs(coeficientes[0]) < 1e-9: # Remove zeros iniciais
         coeficientes.pop(0)
         n = len(coeficientes)
     
     if n == 0:
-        flash("Aviso: Todos os coeficientes do denominador se anularam após a remoção de zeros iniciaos.", 'warning')
+        flash("Aviso: Todos os coeficientes do denominador se anularam após a remoção de zeros iniciais.", 'warning')
         return np.array([[]])
 
     if n == 1 and abs(coeficientes[0]) < 1e-9:
@@ -266,7 +269,7 @@ def tabela_routh(coeficientes):
         routh[1, :len(coeficientes[1::2])] = coeficientes[1::2]
     
     for i in range(2, n):
-        if abs(routh[i - 1, 0]) < 1e-9:
+        if abs(routh[i - 1, 0]) < 1e-9: # Lida com zeros na primeira coluna
             routh[i - 1, 0] = 1e-9
             flash(f"Aviso: Zero ou valor muito próximo de zero detectado na primeira coluna da linha {i-1} da Tabela de Routh. Substituindo por um pequeno valor (1e-9) para continuar o cálculo. Isso pode indicar polos no eixo imaginário ou casos especiais de estabilidade.", 'warning')
 
@@ -309,6 +312,7 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
         t = -t
         y = y - y.min()
     
+    # Garante que os valores de tempo e saída não são negativos para plotagem
     if t.size > 0 and min(t) < 0:
         t = t - min(t)
     if y.size > 0 and min(y) < 0:
@@ -503,7 +507,8 @@ def simulador():
 
     email = session['usuario_logado']
 
-    if email != 'tisaaceng@gmail.com':
+    # Se não for admin, verifica aprovação
+    if not session.get('is_admin', False): # Use session.get('is_admin', False) para verificar
         if os.path.exists('usuarios.json'):
             with open('usuarios.json', 'r') as f:
                 usuarios = json.load(f)
@@ -540,6 +545,7 @@ def simulador():
                     num_list = tf_control_obj.num[0][0]
                     den_list = tf_control_obj.den[0][0]
 
+                    # Cria polinômios SymPy a partir dos coeficientes
                     num_poly = sum(coef * s**(len(num_list) - i - 1) for i, coef in enumerate(num_list))
                     den_poly = sum(coef * s**(len(den_list) - i - 1) for i, coef in enumerate(den_list))
                     return num_poly / den_poly
