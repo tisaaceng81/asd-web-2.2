@@ -47,7 +47,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
     local_dict = {
         'sp': sp, 't': t,
         entrada_str: F, saida_str: x,
-        'F': F, 'x': x,
+        'u': F, 'y': x,
         str(F): F, str(x): x
     }
 
