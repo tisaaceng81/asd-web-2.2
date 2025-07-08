@@ -146,13 +146,13 @@
 
   <form method="POST" action="{{ url_for('simulador') }}">
     <label for="edo">Equação Diferencial Ordinária (EDO):</label>
-    <input type="text" id="edo" name="edo" placeholder="Ex: diff(y,t,2) + 3*diff(y,t) + 2*y = 5*u" required value="{{ request.form.get('edo', '') }}">
+    <input type="text" id="edo" name="edo" placeholder="Ex: diff(x,t,2) + 3*diff(x,t) + 2*x = 5*F" required value="{{ request.form.get('edo', '') }}">
 
     <label for="entrada">Variável de Entrada:</label>
-    <input type="text" id="entrada" name="entrada" placeholder="Ex: u" required value="{{ request.form.get('entrada', 'u') }}">
+    <input type="text" id="entrada" name="entrada" placeholder="Ex: F" required value="{{ request.form.get('entrada', 'F') }}">
 
     <label for="saida">Variável de Saída:</label>
-    <input type="text" id="saida" name="saida" placeholder="Ex: y" required value="{{ request.form.get('saida', 'y') }}">
+    <input type="text" id="saida" name="saida" placeholder="Ex: x" required value="{{ request.form.get('saida', 'x') }}">
 
     <button type="submit">Calcular</button>
   </form>
