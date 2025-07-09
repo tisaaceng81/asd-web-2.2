@@ -106,51 +106,42 @@ def parse_edo(edo_str, entrada_str, saida_str):
     # Aplica as substituições para obter a equação no domínio de Laplace
     expr_laplace = eq.subs(laplace_subs_map)
     
-    # Isola Xs/Fs para obter a Função de Transferência
+    # --- TRECHO CRÍTICO PARA ISOLAR FT MAIS ROBUSTAMENTE ---
     try:
-        # Reorganiza a equação para (coef_Xs * Xs) - (resto) = 0
-        # O SymPy solve é mais robusto para isolar a variável desejada
-        solution_Xs = sp.solve(expr_laplace, Xs)
-        if not solution_Xs:
-            raise ValueError("Não foi possível resolver a EDO para a variável de saída no domínio de Laplace (Xs).")
+        # A equação transformada para Laplace está na forma: Coeficiente_de_Xs * Xs + Coeficiente_de_Fs * Fs + Termo_Constante = 0
+        # Para um sistema linear, o Termo_Constante deve ser zero para a FT.
         
-        # Pega a primeira solução e forma a FT, assumindo Fs=1 (entrada degrau unitário no domínio de Laplace)
-        # É crucial que Fs seja tratado como uma variável aqui, e não substituído muito cedo.
-        # A FT é G(s) = Xs/Fs, então Ls_expr = Xs / Fs quando Fs está no termo da entrada.
-        # Se a solução é Xs = H(s) * Fs, então a FT é H(s).
+        # Cria um Polinômio SymPy com relação a s, Xs e Fs
+        # Isso permite coletar os coeficientes de Xs e Fs de forma limpa.
+        poly_laplace = sp.Poly(expr_laplace, s, Xs, Fs)
         
-        # O SymPy solve muitas vezes retorna Xs em termos de Fs diretamente.
-        # Ex: Xs = (1/(s^2+3s+4))*Fs
-        # Precisamos isolar o termo que multiplica Fs
+        # Coeficiente do termo de saída Xs (será o denominador da FT)
+        den_poly_sym = poly_laplace.coeff_ring.zero
+        if Xs in poly_laplace.free_symbols: # Verifica se Xs está na expressão
+            den_poly_sym = poly_laplace.as_expr().coeff(Xs) # Extrai o coeficiente de Xs
         
-        # Se a solução for Xs = expr_com_Fs, fazemos expr_com_Fs / Fs para obter a FT
-        # Mas é mais limpo fazer o solve direto para Xs/Fs.
+        # Coeficiente do termo de entrada Fs (será o numerador da FT)
+        num_poly_sym_raw = poly_laplace.coeff_ring.zero
+        if Fs in poly_laplace.free_symbols: # Verifica se Fs está na expressão
+            num_poly_sym_raw = poly_laplace.as_expr().coeff(Fs) # Extrai o coeficiente de Fs
+
+        # Verifica se há termos constantes ou não lineares remanescentes (devem ser zero para uma FT válida)
+        constant_term = expr_laplace - den_poly_sym * Xs - num_poly_sym_raw * Fs
         
-        # Uma forma mais robusta de isolar Xs/Fs é tratar toda a equação
-        # como uma relação e isolar a função de transferência.
-        # Rearranjar expr_laplace para a forma A(s)Xs = B(s)Fs
+        if constant_term != 0:
+            raise ValueError(f"A equação transformada para Laplace contém termos constantes ou não lineares: {constant_term}. A Função de Transferência é aplicável apenas a EDOs lineares com condições iniciais zero.")
+
+        if den_poly_sym == 0:
+             raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada (ex: a saída não depende de si mesma ou a EDO é apenas uma constante).")
         
-        # Coletar termos em Xs e Fs
-        poly_Xs = sp.Poly(expr_laplace, s, Xs)
-        poly_Fs = sp.Poly(expr_laplace, s, Fs)
-        
-        # Coeficiente de Xs
-        den_poly_sym = poly_Xs.coeff_dict().get(Xs, sp.S.Zero)
-        # Coeficiente de Fs (negativo porque estamos movendo Fs para o outro lado)
-        num_poly_sym = -poly_Fs.coeff_dict().get(Fs, sp.S.Zero)
-        
-        # Se a EDO não tiver termos em Fs, mas tiver uma constante,
-        # significa que a entrada F(t) não é modelada ou a EDO é homogênea.
-        # Para sistemas de controle, é esperado um termo de entrada.
-        if num_poly_sym == sp.S.Zero and Fs in expr_laplace.free_symbols:
-            # Isso pode acontecer se o termo Fs não for diretamente multiplicador
-            # Tenta um solve mais genérico
-            ratio_expr = sp.simplify(solution_Xs[0] / Fs)
-            Ls_expr = ratio_expr
-        elif num_poly_sym == sp.S.Zero:
-             raise ValueError("Não foi possível identificar um termo de entrada (Fs) na equação transformada. Verifique a EDO e a variável de entrada.")
-        else:
-            Ls_expr = sp.simplify(num_poly_sym / den_poly_sym)
+        if num_poly_sym_raw == 0 and Fs not in expr_laplace.free_symbols: # Se não há Fs e o coeficiente é zero
+            raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. Verifique a EDO e a variável de entrada. (Ex: F não está presente na EDO).")
+
+        # A Função de Transferência G(s) = Xs/Fs.
+        # Se a equação é (den_poly_sym)*Xs + (num_poly_sym_raw)*Fs = 0,
+        # então (den_poly_sym)*Xs = -(num_poly_sym_raw)*Fs
+        # Xs/Fs = -(num_poly_sym_raw) / (den_poly_sym)
+        Ls_expr = sp.simplify(-num_poly_sym_raw / den_poly_sym)
 
     except Exception as e:
         raise ValueError(f"Não foi possível isolar a Função de Transferência. Verifique a EDO e as variáveis de entrada/saída. Erro: {e}")
@@ -173,18 +164,24 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     # Converte os coeficientes simbólicos (agora avaliados) para floats
     try:
-        num_coeffs = [float(c.evalf()) for c in sp.Poly(num_eval, s).all_coeffs()]
-        den_coeffs = [float(c.evalf()) for c in sp.Poly(den_eval, s).all_coeffs()]
-    except TypeError:
-        raise ValueError("Não foi possível converter os coeficientes da Função de Transferência para valores numéricos. Certifique-se de que todos os coeficientes sejam numéricos após a análise da EDO.")
+        # Garante que os objetos são SymPy Poly para extrair coeficientes
+        poly_num = sp.Poly(num_eval, s)
+        poly_den = sp.Poly(den_eval, s)
+        
+        num_coeffs = [float(c.evalf()) for c in poly_num.all_coeffs()]
+        den_coeffs = [float(c.evalf()) for c in poly_den.all_coeffs()]
     except Exception as e:
         raise ValueError(f"Erro ao extrair coeficientes numéricos da FT: {e}. Certifique-se de que a FT resultante seja válida para conversão.")
 
-
-    # Remove coeficientes zero iniciais
-    # O Poly.all_coeffs() já lida com o termo de maior ordem, mas se o numerador
-    # e o denominador tiverem ordens diferentes e precisarem de pad_coeffs,
-    # ou se houver um polinômio zero, esta checagem é importante.
+    # Remove zeros iniciais dos denominadores (se Poly.all_coeffs() gerar [0, a, b])
+    # Isso é importante antes de criar a control.TransferFunction
+    while len(den_coeffs) > 1 and abs(den_coeffs[0]) < 1e-9:
+        den_coeffs.pop(0)
+        # Ajusta o numerador junto se a ordem também reduzir, ou preenche com zero
+        if num_coeffs and len(num_coeffs) > 0 and abs(num_coeffs[0]) < 1e-9:
+            num_coeffs.pop(0)
+        else: # Se o numerador é menor que o denominador após a remoção de zeros, preenche com zeros à esquerda
+            num_coeffs = [0] * (len(den_coeffs) - len(num_coeffs)) + num_coeffs
     
     # Pad e verifica zero de novo, após a conversão para numéricos
     num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
@@ -192,17 +189,17 @@ def parse_edo(edo_str, entrada_str, saida_str):
     if not den_coeffs or all(c == 0 for c in den_coeffs):
         raise ValueError("O denominador da função de transferência resultou em zero ou está vazio após a avaliação numérica. Verifique a equação diferencial.")
     
-    # Se o primeiro coeficiente do denominador ainda for zero, pode ser uma FT impropria.
-    # removemos zeros iniciais antes do control.TransferFunction para evitar erros de ordem.
-    # Ex: [0, 1, 2] -> [1, 2]
-    while len(den_coeffs) > 1 and abs(den_coeffs[0]) < 1e-9:
-        den_coeffs.pop(0)
-        num_coeffs.pop(0) # Ajusta o numerador junto
+    # Se o primeiro coeficiente do denominador ainda for zero, é um problema.
+    if abs(den_coeffs[0]) < 1e-9 and len(den_coeffs) > 1:
+        # Tenta uma última limpeza se ainda houver zero líder após o padding
+        while len(den_coeffs) > 1 and abs(den_coeffs[0]) < 1e-9:
+            den_coeffs.pop(0)
+            if num_coeffs and len(num_coeffs) > 0: # Ajusta o numerador se necessário
+                num_coeffs.pop(0)
+        
+        if not den_coeffs or abs(den_coeffs[0]) < 1e-9: # Se ainda assim o den for inválido
+            raise ValueError("O denominador da função de transferência é inválido ou resultou em zero após simplificação e limpeza.")
     
-    if not den_coeffs: # Se o denominador ficou vazio após a limpeza
-        raise ValueError("O denominador da função de transferência é inválido após simplificação para a FT numérica.")
-
-
     # Cria a Função de Transferência usando a biblioteca control
     FT = control.TransferFunction(num_coeffs, den_coeffs)
     return Ls_expr, FT
@@ -217,7 +214,7 @@ def resposta_degrau(FT, tempo=None):
         tempo = np.linspace(0, 10, 1000)
     try:
         # Aumentar o tempo de simulação para sistemas instáveis ou lentos
-        if FT.poles() and np.any(np.real(FT.poles()) >= 0): # Se tiver polos no semi-plano direito ou no eixo imaginário
+        if FT.poles() is not None and np.any(np.real(FT.poles()) >= 0): # Se tiver polos no semi-plano direito ou no eixo imaginário
             if tempo[-1] < 20: # Aumenta o tempo se a FT for instável e o tempo atual for curto
                 tempo = np.linspace(0, 20, 2000) # Simula por mais tempo
         
@@ -253,7 +250,7 @@ def estima_LT(t, y):
     y_scaled = (y - y_inicial) / (y_final - y_inicial)
 
     try:
-        # L - Tempo em que a resposta atinge 1% da variação total
+        # Encontra o primeiro ponto onde a resposta começa a subir (acima de um pequeno limiar)
         indice_inicio = next(i for i, v in enumerate(y_scaled) if v > 0.01 or v < -0.01)
         L = t[indice_inicio]
     except StopIteration:
