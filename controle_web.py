@@ -432,6 +432,11 @@ def plot_polos_zeros(FT):
     all_coords_real = np.concatenate((np.real(poles), np.real(zeros)))
     all_coords_imag = np.concatenate((np.imag(poles), np.imag(zeros)))
 
+    # Set default limits first
+    ax.set_xlim(-2, 2)
+    ax.set_ylim(-2, 2)
+
+    # Adjust limits dynamically IF there are poles/zeros
     if all_coords_real.size > 0 and all_coords_imag.size > 0:
         min_re, max_re = all_coords_real.min(), all_coords_real.max()
         min_im, max_im = all_coords_imag.min(), all_coords_imag.max()
@@ -441,10 +446,7 @@ def plot_polos_zeros(FT):
 
         ax.set_xlim(min_re - margin_re, max_re + margin_re)
         ax.set_ylim(min_im - margin_im, max_im + margin_im)
-    else: # Esta linha 'else' está corretamente indentada e pareada com o 'if' acima dela
-        ax.set_xlim(-2, 2)
-        ax.set_ylim(-2, 2)
-
+    
     caminho = os.path.join('static', 'polos_zeros.png')
     try:
         plt.savefig(caminho)
