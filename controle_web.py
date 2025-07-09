@@ -40,27 +40,37 @@ def pad_coeffs(num_coeffs, den_coeffs):
 
 def parse_edo(edo_str, entrada_str, saida_str):
     t = sp.symbols('t', real=True)
-    # Usar sp.Function com o nome da string para criar o objeto de função
-    x = sp.Function(saida_str)(t)
-    F = sp.Function(entrada_str)(t)
+    # Define as funções simbólicas x(t) e F(t)
+    x = sp.Function(saida_str)(t) # x é agora o objeto função x(t)
+    F = sp.Function(entrada_str)(t) # F é agora o objeto função F(t)
 
-    eq_str_processed = edo_str.replace('diff', 'sp.Derivative')
-    if '=' in eq_str_processed:
-        lhs, rhs = eq_str_processed.split('=')
-        eq_str_processed = f"({lhs.strip()}) - ({rhs.strip()})"
+    # Não substitua 'diff' aqui. Confie no local_dict para mapear as strings 'diff(...)'
+    eq_str_to_sympify = edo_str
+    if '=' in eq_str_to_sympify:
+        lhs, rhs = eq_str_to_sympify.split('=')
+        eq_str_to_sympify = f"({lhs.strip()}) - ({rhs.strip()})"
 
-    # local_dict precisa incluir as funções simbólicas criadas
-    # --- AJUSTE AQUI: Removendo entradas potencialmente ambíguas do local_dict ---
+    # local_dict: Mapeia símbolos e representações de string para objetos SymPy
     local_dict = {
         'sp': sp, 't': t,
+        # Mapeia os nomes das variáveis para seus objetos de função SymPy
         entrada_str: F, # Ex: 'F': F(t)
         saida_str: x    # Ex: 'x': x(t)
     }
-    # As entradas como 'str(F): F' e 'f"diff(...)"' foram removidas para evitar ambiguidades.
-    # O sympify deve ser capaz de resolver 'sp.Derivative(x,t,2)' se 'x' já estiver mapeado para x(t).
+    
+    # Explicitamente mapeia as formas de string das derivadas para os objetos SymPy Derivative
+    # Isso é crucial para que sympify interprete corretamente 'diff(x,t,2)' etc.
+    for i in range(1, 5): # Suporta até a 4ª derivada
+        # Ex: 'diff(x,t,2)': sp.Derivative(x(t), t, t)
+        local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(x, t, i)
+        local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F, t, i)
+    # Também para as primeiras derivadas sem o '1' explícito
+    local_dict[f'diff({saida_str},t)'] = sp.Derivative(x, t, 1)
+    local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1)
 
     try:
-        eq = sp.sympify(eq_str_processed, locals=local_dict)
+        # Passa a string da EDO original diretamente para sympify, permitindo que local_dict manipule 'diff'
+        eq = sp.sympify(eq_str_to_sympify, locals=local_dict)
     except Exception as e:
         raise ValueError(f"Erro ao interpretar a Equação Diferencial Ordinária (EDO): '{e}'. Verifique a sintaxe da EDO. Ex: 'diff(x,t,2) + x = F'")
 
@@ -68,24 +78,24 @@ def parse_edo(edo_str, entrada_str, saida_str):
     Xs = sp.symbols(f'{saida_str}s')
     Fs = sp.symbols(f'{entrada_str}s')
 
+    # O mapa de substituição precisa encontrar os *objetos SymPy reais* criados por sympify
     expr_laplace = eq
-    
-    # Percorrer os átomos da expressão para substituir as funções e derivadas
     subs_map = {}
     for atom in expr_laplace.atoms():
         if isinstance(atom, sp.Function):
-            if str(atom.func) == saida_str and atom.args == (t,):
+            # Compara diretamente os objetos de função SymPy
+            if atom == x: 
                 subs_map[atom] = Xs
-            elif str(atom.func) == entrada_str and atom.args == (t,):
+            elif atom == F: 
                 subs_map[atom] = Fs
         elif isinstance(atom, sp.Derivative):
             base_func = atom.expr
             order = atom.derivative_count
-            if isinstance(base_func, sp.Function) and base_func.args == (t,):
-                if str(base_func.func) == saida_str:
-                    subs_map[atom] = s**order * Xs
-                elif str(base_func.func) == entrada_str:
-                    subs_map[atom] = s**order * Fs
+            # Compara diretamente o objeto da função base da derivada
+            if base_func == x: 
+                subs_map[atom] = s**order * Xs
+            elif base_func == F: 
+                subs_map[atom] = s**order * Fs
             
     expr_laplace = expr_laplace.subs(subs_map)
 
@@ -95,37 +105,32 @@ def parse_edo(edo_str, entrada_str, saida_str):
            (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
             raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Certifique-se de que todas as funções de tempo e suas derivadas foram corretamente especificadas ou substituídas.")
 
-    # === INÍCIO DAS CORREÇÕES E MELHORIAS NAS MENSAGENS DE ERRO ===
+    # === INÍCIO DAS MELHORIAS NAS MENSAGENS DE ERRO (já existentes) ===
     try:
         coef_Xs = expr_laplace.coeff(Xs)
         
         if coef_Xs == 0:
             if Xs not in expr_laplace.free_symbols:
-                # Caso 1: A variável de saída (X) não foi encontrada na EDO transformada
                 raise ValueError(f"A variável de saída '{saida_str}' (transformada em '{Xs}') não foi encontrada na equação após a transformação de Laplace. Verifique se a EDO realmente depende da variável de saída fornecida ou se a sintaxe está correta (ex: 'x' em vez de 'X').")
             else:
-                # Caso 2: Os termos da variável de saída (X) se cancelaram ou somaram a zero.
                 raise ValueError(f"Os termos da variável de saída '{saida_str}' (transformada em '{Xs}') na EDO se cancelaram ou resultaram em um coeficiente nulo ({coef_Xs}) após a transformação de Laplace. Isso impede o cálculo da Função de Transferência. Verifique a linearidade ou a forma da EDO.")
 
         resto = expr_laplace - coef_Xs * Xs
         
         if Fs not in resto.free_symbols and resto != 0:
-            # Caso 3: A variável de entrada (F) não foi encontrada na parte restante da EDO.
             raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes sem a variável de entrada '{entrada_str}' (transformada em '{Fs}'): '{resto}'. Verifique se a EDO é linear em F e se a variável de entrada está presente e correta (Ex: use 'k*F' no lugar de 'F*k' se 'k' for um símbolo).")
             
         if resto == 0 and Fs not in expr_laplace.free_symbols:
-            # Caso 4: A variável de entrada (F) não foi identificada ou tem coeficiente zero na EDO.
-            raise ValueError(f"Não foi possível identificar a variável de entrada '{entrada_str}' (transformada em '{Fs}') na equação transformada para Laplace. Verifique se a EDO inclui a variável de entrada e se o seu coeficiente não é zero (Ex: 'k*F' em vez de '0*F').")
+             raise ValueError(f"Não foi possível identificar a variável de entrada '{entrada_str}' (transformada em '{Fs}') na equação transformada para Laplace. Verifique se a EDO inclui a variável de entrada e se o seu coeficiente não é zero (Ex: 'k*F' em vez de '0*F').")
 
         Ls_expr = -resto / coef_Xs
         Ls_expr = sp.simplify(Ls_expr.subs(Fs, 1)) # Assume Fs=1 para a FT
 
-    except ValueError as ve: # Re-lança os erros ValueError específicos
+    except ValueError as ve: 
         raise ve
     except Exception as e:
-        # Erro genérico para problemas inesperados durante o isolamento da FT
         raise ValueError(f"Um erro inesperado ocorreu durante o isolamento da Função de Transferência: {e}. Verifique a EDO e as variáveis de entrada/saída.")
-    # === FIM DAS CORREÇÕES E MELHORIAS NAS MENSAGENS DE ERRO ===
+    # === FIM DAS MELHORIAS NAS MENSAGENS DE ERRO ===
 
     num, den = sp.fraction(Ls_expr)
     
@@ -171,12 +176,12 @@ def resposta_degrau(FT, tempo=None):
     try:
         # Aumentar o tempo de simulação para sistemas instáveis ou lentos
         if FT.poles() is not None and np.any(np.real(FT.poles()) >= 0):
-            if tempo[-1] < 20: # Aumenta o tempo se houver polos no semiplano direito (instável)
+            if tempo[-1] < 20: 
                 tempo = np.linspace(0, 20, 2000)
         
         t, y = step(FT, T=tempo)
         
-        if np.any(np.abs(y) > 1e10): # Limita valores muito grandes para não estourar o gráfico
+        if np.any(np.abs(y) > 1e10): 
             flash("Aviso: A resposta ao degrau apresentou valores muito grandes, indicando um sistema instável. O gráfico pode ser difícil de interpretar.", 'warning')
             y[np.abs(y) > 1e10] = np.sign(y[np.abs(y) > 1e10]) * 1e10
 
@@ -186,12 +191,9 @@ def resposta_degrau(FT, tempo=None):
 
 def estima_LT(t, y):
     y_final = y[-1]
-    # Lidar com sistemas que se estabilizam em zero ou não variam
-    if abs(y_final) < 1e-6 or (max(y) - min(y) < 1e-6): # Se a resposta final é essencialmente zero ou não muda
-        return 0.01, 0.01 # Retorna valores pequenos para evitar divisão por zero ou erros
+    if abs(y_final) < 1e-6 or (max(y) - min(y) < 1e-6): 
+        return 0.01, 0.01 
 
-    # Encontrar L (tempo morto) e T (constante de tempo)
-    # Adaptação para evitar erros se y_final for zero ou muito pequeno
     if abs(y_final) < 1e-6:
         L_threshold = 0.01 * (max(y) - min(y)) + min(y)
         y_63_target = 0.63 * (max(y) - min(y)) + min(y)
@@ -206,7 +208,6 @@ def estima_LT(t, y):
     indice_63 = next((i for i, v in enumerate(y) if v >= y_63_target), len(y) - 1)
     T_estimado = t[indice_63] - L
 
-    # Garante que L e T sejam positivos e com valor mínimo para evitar divisão por zero
     L = L if L >= 0 else 0.01
     T_estimado = T_estimado if T_estimado >= 0 else 0.01
 
@@ -222,14 +223,13 @@ def sintonia_ziegler_nichols(L, T):
     return Kp, Ki, Kd
 
 def cria_pid_tf(Kp, Ki, Kd):
-    s_sym = control.TransferFunction.s # Usar s_sym para evitar conflito com 's' de SymPy.abc
+    s_sym = control.TransferFunction.s 
     return Kp + Ki / s_sym + Kd * s_sym
 
 def malha_fechada_tf(Gp, Gc):
     return control.feedback(Gp * Gc, 1)
 
 def tabela_routh(coeficientes):
-    # Certifica que os coeficientes são numéricos antes de construir a tabela
     coeficientes_numericos = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
     n = len(coeficientes_numericos)
     
@@ -237,7 +237,6 @@ def tabela_routh(coeficientes):
         flash("Aviso: Coeficientes do denominador são todos zero ou vazios para a Tabela de Routh.", 'warning')
         return np.array([[]])
 
-    # Remove zeros iniciais se houver (ex: 0s^2 + 2s + 1)
     while n > 0 and abs(coeficientes_numericos[0]) < 1e-9:
         coeficientes_numericos.pop(0)
         n = len(coeficientes_numericos)
@@ -258,9 +257,8 @@ def tabela_routh(coeficientes):
         routh[1, :len(coeficientes_numericos[1::2])] = coeficientes_numericos[1::2]
     
     for i in range(2, n):
-        # Lida com o caso de zero ou quase zero na primeira coluna substituindo por um pequeno epsilon
         if abs(routh[i - 1, 0]) < 1e-9:
-            routh[i - 1, 0] = 1e-9 # Usar um valor muito pequeno para continuar o cálculo
+            routh[i - 1, 0] = 1e-9 
             flash(f"Aviso: Zero ou valor muito próximo de zero detectado na primeira coluna da linha {i-1} da Tabela de Routh. Substituindo por um pequeno valor (1e-9) para continuar o cálculo. Isso pode indicar polos no eixo imaginário ou problemas de estabilidade.", 'warning')
 
         for j in range(m - 1):
@@ -270,7 +268,7 @@ def tabela_routh(coeficientes):
             d = routh[i - 1, j + 1]
             
             if abs(b) < 1e-9:
-                routh[i, j] = 0 # Evita divisão por zero, implica uma linha de zeros ou erro grave
+                routh[i, j] = 0
             else:
                 routh[i, j] = (b * c - a * d) / b
                 
@@ -288,27 +286,23 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
         print(f"Aviso: Dados vazios ou inválidos para o gráfico '{nome}'. Não será gerado.")
         return None
 
-    # Aplica deslocamento (se houver)
     y = y + deslocamento
 
-    # Aplica rotação (se especificado)
     if rotacao == 180:
         t = -t[::-1]
         y = -y[::-1]
     elif rotacao == 90:
-        t, y = -y, t # Rotação de 90 graus (eixo x vira y, y vira x)
+        t, y = -y, t 
 
-    # Normaliza para começar em zero (se necessário)
-    # Isso é importante se a rotação ou deslocamento causar valores negativos no início
     if t.size > 0:
         t_min = t.min()
         if t_min < 0:
-            t = t - t_min # Desloca para que o mínimo seja 0
+            t = t - t_min 
     
     if y.size > 0:
         y_min = y.min()
         if y_min < 0:
-            y = y - y_min # Desloca para que o mínimo seja 0
+            y = y - y_min 
 
     plt.figure(figsize=(8, 4))
     plt.plot(t, y, label='Resposta ao Degrau')
@@ -320,7 +314,6 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
     plt.tight_layout()
     caminho = os.path.join('static', f'{nome}.png')
     try:
-        # Garante que o diretório 'static' existe
         os.makedirs('static', exist_ok=True)
         plt.savefig(caminho)
     except Exception as e:
@@ -335,7 +328,6 @@ def plot_polos_zeros(FT):
     poles = FT.poles()
     zeros = FT.zeros()
 
-    # Desenha polos e zeros, evitando arrays vazios
     if poles.size > 0:
         ax.scatter(np.real(poles), np.imag(poles), marker='x', color='red', s=100, label='Polos')
     if zeros.size > 0:
@@ -349,7 +341,6 @@ def plot_polos_zeros(FT):
     ax.legend()
     ax.grid(True)
     
-    # Ajuste de limites para garantir que o gráfico seja sempre visível e não cortado
     all_coords_real = np.concatenate((np.real(poles), np.real(zeros)))
     all_coords_imag = np.concatenate((np.imag(poles), np.imag(zeros)))
 
@@ -357,21 +348,19 @@ def plot_polos_zeros(FT):
         min_re, max_re = all_coords_real.min(), all_coords_real.max()
         min_im, max_im = all_coords_imag.min(), all_coords_imag.max()
 
-        # Adiciona uma margem para os limites
         margin_re = max(0.5, (max_re - min_re) * 0.1)
         margin_im = max(0.5, (max_im - min_im) * 0.1)
 
         ax.set_xlim(min_re - margin_re, max_re + margin_re)
         ax.set_ylim(min_im - margin_im, max_im + margin_im)
     else:
-        # Limites padrão se não houver polos/zeros finitos (e.g., FT constante)
         ax.set_xlim(-2, 2)
         ax.set_ylim(-2, 2)
 
-    ax.set_aspect('equal', adjustable='box') # Proporção igual para eixos
+    ax.set_aspect('equal', adjustable='box')
     caminho = os.path.join('static', 'polos_zeros.png')
     try:
-        os.makedirs('static', exist_ok=True) # Garante que o diretório 'static' existe
+        os.makedirs('static', exist_ok=True) 
         plt.savefig(caminho)
     except Exception as e:
         print(f"Erro ao salvar o gráfico de Polos e Zeros: {e}")
@@ -409,7 +398,7 @@ def login():
                     usuarios = json.load(f)
             except json.JSONDecodeError:
                 flash("Erro ao carregar dados de usuários. Arquivo 'usuarios.json' pode estar corrompido.", 'danger')
-                usuarios = {} # Reseta para evitar erros subsequentes
+                usuarios = {} 
 
         if email in usuarios:
             # AVISO DE SEGURANÇA CRÍTICO: Senhas armazenadas em texto plano.
@@ -448,7 +437,7 @@ def cadastro():
                 flash("Erro ao carregar dados de usuários. Arquivo 'usuarios.json' pode estar corrompido. Tente novamente.", 'danger')
                 return redirect(url_for('cadastro'))
 
-        if email in usuarios or email == 'tisaaceng@gmail.com': # Evita que email do admin seja cadastrado como usuário normal
+        if email in usuarios or email == 'tisaaceng@gmail.com':
             flash('Este email já está cadastrado ou reservado.', 'warning')
             return redirect(url_for('cadastro'))
 
@@ -469,7 +458,6 @@ def cadastro():
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
-    # Permite acesso somente se estiver logado como admin (email fixo + flag)
     if 'usuario_logado' not in session or not session.get('is_admin'):
         flash('Acesso negado. Apenas o administrador pode acessar esta página.', 'danger')
         return redirect(url_for('login'))
@@ -496,7 +484,6 @@ def admin():
         else:
             flash('Usuário não encontrado para aprovação.', 'danger')
 
-    # Mostrar apenas usuários não aprovados
     nao_aprovados = {k: v for k, v in usuarios.items() if not v.get('aprovado', False)}
     return render_template('admin.html', usuarios=nao_aprovados, admin=True)
 
@@ -523,7 +510,6 @@ def simulador():
 
     email = session['usuario_logado']
 
-    # Verificar se usuário está aprovado (exceto admin)
     if not session.get('is_admin', False):
         usuarios = {}
         if os.path.exists('usuarios.json'):
@@ -532,7 +518,7 @@ def simulador():
                     usuarios = json.load(f)
             except json.JSONDecodeError:
                 flash("Erro ao carregar dados de usuários para verificação. Arquivo 'usuarios.json' pode estar corrompido.", 'danger')
-                return redirect(url_for('painel')) # Ou login
+                return redirect(url_for('painel')) 
 
         if not usuarios.get(email, {}).get('aprovado', False):
             flash('Seu cadastro ainda não foi aprovado para usar o simulador. Por favor, aguarde a aprovação do administrador.', 'warning')
@@ -554,23 +540,17 @@ def simulador():
                 Ls_expr, FT = parse_edo(edo, entrada, saida)
                 ft_latex = ft_to_latex(Ls_expr)
                 
-                # Resposta ao degrau em malha aberta
                 t_open, y_open = resposta_degrau(FT)
                 
-                # Estima L e T para sintonia
                 L, T = estima_LT(t_open, y_open)
                 
-                # Sintonia PID
                 Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
                 
-                # Cria controlador PID e FT de malha fechada
                 pid = cria_pid_tf(Kp, Ki, Kd)
                 mf = malha_fechada_tf(FT, pid)
                 
-                # Resposta ao degrau em malha fechada
                 t_closed, y_closed = resposta_degrau(mf)
 
-                # Converte TFs do control para SymPy para exibir em LaTeX
                 def tf_to_sympy_tf(tf_control_obj):
                     num_list = tf_control_obj.num[0][0]
                     den_list = tf_control_obj.den[0][0]
@@ -582,12 +562,10 @@ def simulador():
                 expr_pid = sp.simplify(tf_to_sympy_tf(pid))
                 expr_mf = sp.simplify(tf_to_sympy_tf(mf))
 
-                # Salvar gráficos
                 img_resposta_aberta = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', rotacao=0)
                 img_resposta_fechada = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', rotacao=0, deslocamento=0.0)
                 img_pz = plot_polos_zeros(FT)
 
-                # Tabela de Routh (denominador da FT de malha aberta)
                 den_coefs = flatten_and_convert(FT.den[0])
                 routh_table = tabela_routh(den_coefs)
 
@@ -598,9 +576,9 @@ def simulador():
                     'Kp': Kp,
                     'Ki': Ki,
                     'Kd': Kd,
-                    'img_resposta_aberta': img_resposta_aberta if img_resposta_aberta else '', # Garante que não é None
-                    'img_resposta_fechada': img_resposta_fechada if img_resposta_fechada else '', # Garante que não é None
-                    'img_pz': img_pz if img_pz else '', # Garante que não é None
+                    'img_resposta_aberta': img_resposta_aberta if img_resposta_aberta else '',
+                    'img_resposta_fechada': img_resposta_fechada if img_resposta_fechada else '',
+                    'img_pz': img_pz if img_pz else '',
                     'routh_table': routh_table.tolist()
                 }
 
@@ -658,8 +636,6 @@ def alterar_senha():
             flash('Usuário não encontrado. Por favor, tente novamente.', 'danger')
             return redirect(url_for('alterar_senha'))
 
-        # AVISO DE SEGURANÇA CRÍTICO: Compara senhas em texto plano.
-        # Se você usar hashing para armazenar senhas, precisará usar a função de verificação de hash aqui.
         if usuarios[email]['senha'] != senha_atual:
             flash('Senha atual incorreta.', 'danger')
             return redirect(url_for('alterar_senha'))
@@ -672,8 +648,6 @@ def alterar_senha():
             flash('A nova senha não pode ser vazia.', 'danger')
             return redirect(url_for('alterar_senha'))
 
-        # AVISO DE SEGURANÇA CRÍTICO: Senha nova será salva em texto plano.
-        # Use hashing para armazenar senhas.
         usuarios[email]['senha'] = nova_senha
         try:
             with open('usuarios.json', 'w') as f:
@@ -689,9 +663,6 @@ def alterar_senha():
 
 @app.route('/funcao_transferencia')
 def funcao_transferencia():
-    # Esta rota não está salvando 'ft_latex' na sessão.
-    # Se você quiser exibir a última FT calculada, precisaria salvá-la no 'resultado' do simulador
-    # e passá-la para a sessão ou recuperá-la de outra forma.
     flash("Esta página atualmente não exibe a última Função de Transferência calculada. Use o simulador.", 'info')
     ft_latex = "Função de Transferência não disponível ou não calculada recentemente."
     is_admin = session.get('is_admin', False)
@@ -699,7 +670,6 @@ def funcao_transferencia():
 
 # === EXECUÇÃO PRINCIPAL ===
 if __name__ == '__main__':
-    # Certifica que o diretório 'static' existe para salvar os gráficos
     os.makedirs('static', exist_ok=True)
     port = int(os.environ.get('PORT', 5050))
     app.run(host='0.0.0.0', port=port, debug=False)
