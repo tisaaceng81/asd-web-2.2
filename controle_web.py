@@ -111,21 +111,19 @@ def parse_edo(edo_str, entrada_str, saida_str):
         # A equação transformada para Laplace está na forma: Coeficiente_de_Xs * Xs + Coeficiente_de_Fs * Fs + Termo_Constante = 0
         # Para um sistema linear, o Termo_Constante deve ser zero para a FT.
         
-        # Cria um Polinômio SymPy com relação a s, Xs e Fs
-        # Isso permite coletar os coeficientes de Xs e Fs de forma limpa.
-        poly_laplace = sp.Poly(expr_laplace, s, Xs, Fs)
-        
         # Coeficiente do termo de saída Xs (será o denominador da FT)
-        den_poly_sym = poly_laplace.coeff_ring.zero
-        if Xs in poly_laplace.free_symbols: # Verifica se Xs está na expressão
-            den_poly_sym = poly_laplace.as_expr().coeff(Xs) # Extrai o coeficiente de Xs
+        # Usamos .as_expr().coeff() para extrair o coeficiente de uma expressão que pode ser um Poly
+        den_poly_sym = expr_laplace.coeff(Xs) # Coeficiente de Xs
         
         # Coeficiente do termo de entrada Fs (será o numerador da FT)
-        num_poly_sym_raw = poly_laplace.coeff_ring.zero
-        if Fs in poly_laplace.free_symbols: # Verifica se Fs está na expressão
-            num_poly_sym_raw = poly_laplace.as_expr().coeff(Fs) # Extrai o coeficiente de Fs
-
+        # O restante da expressão após remover o termo de Xs deve ser o termo de Fs e talvez uma constante.
+        # Queremos o termo que multiplica Fs no lado da entrada.
+        # A expressão é zero. Então A*Xs + B*Fs = 0. A FT é Xs/Fs = -B/A.
+        # Portanto, o numerador é - (coeficiente de Fs).
+        num_poly_sym_raw = expr_laplace.coeff(Fs) # Coeficiente de Fs
+        
         # Verifica se há termos constantes ou não lineares remanescentes (devem ser zero para uma FT válida)
+        # Remove os termos de Xs e Fs para ver o que sobra
         constant_term = expr_laplace - den_poly_sym * Xs - num_poly_sym_raw * Fs
         
         if constant_term != 0:
