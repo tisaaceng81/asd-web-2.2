@@ -61,10 +61,48 @@
             padding-top: 70px; /* Ajusta conforme a altura da sua navbar (~50px + margem) */
             flex-grow: 1; /* Permite que o conteúdo principal ocupe o espaço restante */
             width: 100%; /* Garante que o conteúdo ocupe a largura total */
+            display: flex; /* Torna flexível para centralizar o wrapper */
+            flex-direction: column; /* Organiza itens verticalmente */
+            justify-content: center; /* Centraliza o wrapper verticalmente */
+            align-items: center; /* Centraliza o wrapper horizontalmente */
+        }
+
+        .main-content-wrapper {
+            max-width: 900px; /* Largura máxima para o conteúdo principal */
+            width: 90%; /* Use porcentagem para melhor responsividade */
+            padding: 20px; /* Padding interno */
+            background-color: #fff; /* Fundo branco para o conteúdo */
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            text-align: center;
+            flex-grow: 1; /* Permite que o wrapper se expanda verticalmente */
+            display: flex; /* Torna o wrapper flexível */
+            flex-direction: column; /* Organiza os itens (h1, img) verticalmente */
+            justify-content: center; /* Centraliza h1 e img verticalmente */
+            align-items: center; /* Centraliza h1 e img horizontalmente */
+            /* A min-height dinâmica calcula o espaço entre navbar e footer */
+            min-height: calc(100vh - 70px - 60px); /* 100vh - altura da navbar - altura estimada do footer */
+            box-sizing: border-box; /* Inclui padding na min-height */
+        }
+
+        .logo {
+            display: block;
+            margin: 20px auto; /* Margem reduzida para dar mais espaço à imagem */
+            width: auto; /* Permite que a largura se ajuste proporcionalmente */
+            max-width: 80%; /* Limita a largura para não ser muito grande */
+            height: auto; /* Mantém a proporção da imagem */
+            flex-grow: 1; /* Permite que a imagem se estique verticalmente dentro do wrapper */
+            object-fit: contain; /* Garante que a imagem se ajuste sem cortar ou distorcer */
+            max-height: calc(100% - 40px); /* Limita a altura máxima do logo dentro do wrapper, considerando as margens */
+        }
+
+        h1 {
+            margin-top: 0; /* Remove margem superior se usar flex para centralização */
+            margin-bottom: 20px; /* Espaço abaixo do título */
+            color: #333;
         }
 
         footer {
-            /* Removido position: fixed e width: 100% para footer ao final do conteúdo */
             text-align: center;
             font-size: small;
             color: gray;
@@ -73,30 +111,6 @@
             margin-top: auto; /* Empurra o footer para o final se o conteúdo for curto */
             width: 100%; /* Ocupa a largura total */
             box-sizing: border-box; /* Inclui padding na largura total */
-        }
-
-        .logo {
-            display: block;
-            margin: 50px auto 50px auto; /* Reduzida margem superior para compensar navbar fixa */
-            max-width: 200px;
-            height: auto; /* Garante proporção */
-        }
-
-        h1 {
-            text-align: center;
-            margin-top: 30px; /* Ajustado para se adequar à navbar fixa */
-            color: #333;
-        }
-
-        /* Container principal para o conteúdo central */
-        .main-content-wrapper {
-            max-width: 900px; /* Largura máxima para o conteúdo principal */
-            margin: 0 auto; /* Centraliza o wrapper */
-            padding: 20px; /* Padding interno */
-            background-color: #fff; /* Fundo branco para o conteúdo */
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            text-align: center;
         }
 
         /* Estilos para mensagens flash */
