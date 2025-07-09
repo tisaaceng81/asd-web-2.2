@@ -142,18 +142,24 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     num, den = sp.fraction(Ls_expr)
 
+    # NOVO: Agrupa explicitamente os termos do numerador e denominador em relação a 's'
+    # Isso ajuda a garantir que sp.Poly interprete corretamente as potências de 's'.
+    num_poly_expr = sp.collect(num, s)
+    den_poly_expr = sp.collect(den, s)
+
     # Verificação mais robusta de coeficientes numéricos
     has_symbolic_coeffs = False
     try:
-        num_poly = sp.Poly(num, s)
-        den_poly = sp.Poly(den, s)
+        # Cria os objetos Poly usando as expressões coletadas
+        num_poly = sp.Poly(num_poly_expr, s)
+        den_poly = sp.Poly(den_poly_expr, s)
         
         for coeff in num_poly.all_coeffs() + den_poly.all_coeffs():
             if not coeff.is_number:
                 has_symbolic_coeffs = True
                 break
     except Exception as poly_e:
-        # Se não for um polinômio em 's', provavelmente contém outros símbolos
+        # Se houver erro ao formar o polinômio, trata como se tivesse coeficientes simbólicos
         has_symbolic_coeffs = True
 
     if has_symbolic_coeffs:
@@ -446,7 +452,7 @@ def simulador():
             with open('usuarios.json', 'r') as f:
                 usuarios = json.load(f)
             if not usuarios.get(email, {}).get('aprovado', False):
-                flash('Seu cadastro ainda não foi aprovado para usar o simulador. Por favor, aguarde a aprovação do administrador.')
+                flash('Seu cadastro ainda não foi aprovado para usar o simulador.')
                 return redirect(url_for('painel'))
         else:
             flash('Arquivo de usuários não encontrado. Não foi possível verificar o status de aprovação.')
