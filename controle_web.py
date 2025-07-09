@@ -68,9 +68,9 @@ def parse_edo(edo_str, entrada_str, saida_str):
     """
     t = sp.symbols('t', real=True)
     
-    # Define as funções de entrada e saída dinamicamente com base nos nomes fornecidos
-    X = sp.Function(saida_str)(t)
-    F = sp.Function(entrada_str)(t)
+    # Define as FUNÇÕES de entrada e saída (sem aplicar 't' ainda)
+    X_func = sp.Function(saida_str)
+    F_func = sp.Function(entrada_str)
 
     # Prepara a string da equação para sympify, substituindo 'diff' e garantindo formato de equação
     eq_str = edo_str.replace('diff', 'sp.Derivative')
@@ -79,23 +79,20 @@ def parse_edo(edo_str, entrada_str, saida_str):
         eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
     # Identifica todos os potenciais símbolos na string da EDO
-    # Usa regex para encontrar sequências de letras que podem ser símbolos (ex: 'a', 'b', 'k')
-    # Evita corresponder a palavras-chave como 'diff', 'sp', 'Derivative'
     potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
 
     # Inicializa o dicionário local para sp.sympify
     local_dict = {
         'sp': sp,
         't': t,
-        saida_str: X, # Mapeia o nome da variável de saída do usuário para a função sympy
-        entrada_str: F, # Mapeia o nome da variável de entrada do usuário para a função sympy
+        saida_str: X_func, # Passa a função SymPy para o local_dict
+        entrada_str: F_func, # Passa a função SymPy para o local_dict
     }
 
     # Adiciona outros símbolos identificados ao local_dict como símbolos sympy
-    # Exclui palavras-chave e os nomes das variáveis de entrada/saída já tratadas
     excluded_keywords = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
     for sym_name in potential_symbols:
-        if sym_name not in excluded_keywords:
+        if sym_name not in excluded_keywords and sym_name not in local_dict: # Evita sobrescrever X_func/F_func
             local_dict[sym_name] = sp.symbols(sym_name)
 
     # Analisa a EDO usando sympy
@@ -105,20 +102,24 @@ def parse_edo(edo_str, entrada_str, saida_str):
         raise ValueError(f"Não foi possível analisar a string da EDO. Verifique a sintaxe e as variáveis definidas. Erro: {e}")
 
     # Transforma a EDO para o domínio de Laplace
-    Xs, Fs = sp.symbols(f'{saida_str}s {entrada_str}s') # Símbolos dinâmicos para o domínio de Laplace
+    Xs = sp.Symbol(f'{saida_str}s') # Símbolo para a transformada de Laplace da saída
+    Fs = sp.Symbol(f'{entrada_str}s') # Símbolo para a transformada de Laplace da entrada
+
     expr_laplace = eq
     
     # Substitui as derivadas pelas suas equivalentes no domínio 's'
     for d in expr_laplace.atoms(sp.Derivative):
         order = d.derivative_count
-        func = d.expr
-        if func == X:
+        func_expr = d.expr # A expressão da função dentro da derivada (e.g., y(t) ou u(t))
+        
+        # Verifica se a função dentro da derivada é a função de saída ou entrada
+        if func_expr.func == X_func: # Compara o objeto Function, não a expressão aplicada
             expr_laplace = expr_laplace.subs(d, s**order * Xs)
-        elif func == F:
+        elif func_expr.func == F_func: # Compara o objeto Function
             expr_laplace = expr_laplace.subs(d, s**order * Fs)
     
-    # Substitui as funções do domínio do tempo pelos símbolos do domínio 's'
-    expr_laplace = expr_laplace.subs({X: Xs, F: Fs})
+    # Substitui as funções do domínio do tempo (aplicadas a 't') pelos símbolos do domínio 's'
+    expr_laplace = expr_laplace.subs({X_func(t): Xs, F_func(t): Fs})
 
     # Isola Xs/Fs para obter a função de transferência G(s) = Xs / Fs
     try:
@@ -141,7 +142,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     num, den = sp.fraction(Ls_expr)
 
-    # NOVO: Verificação mais robusta de coeficientes numéricos
+    # Verificação mais robusta de coeficientes numéricos
     has_symbolic_coeffs = False
     try:
         num_poly = sp.Poly(num, s)
@@ -154,8 +155,6 @@ def parse_edo(edo_str, entrada_str, saida_str):
     except Exception as poly_e:
         # Se não for um polinômio em 's', provavelmente contém outros símbolos
         has_symbolic_coeffs = True
-        # Não levante erro aqui, apenas marque como simbólico para tratamento posterior
-        # print(f"Debug: Erro ao formar polinômio, tratando como simbólico: {poly_e}")
 
     if has_symbolic_coeffs:
         # Se houver coeficientes simbólicos, não podemos criar uma TransferFunction numérica
