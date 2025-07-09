@@ -441,7 +441,7 @@ def plot_polos_zeros(FT):
 
         ax.set_xlim(min_re - margin_re, max_re + margin_re)
         ax.set_ylim(min_im - margin_im, max_im + margin_im)
-    else:
+    else: # Esta linha 'else' está corretamente indentada e pareada com o 'if' acima dela
         ax.set_xlim(-2, 2)
         ax.set_ylim(-2, 2)
 
