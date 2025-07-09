@@ -45,31 +45,32 @@ def pad_coeffs(num_coeffs, den_coeffs):
 
 def parse_edo(edo_str, entrada_str, saida_str):
     t = sp.symbols('t', real=True)
-    # Criar funções simbólicas para entrada e saída dinamicamente
-    x = sp.Function(saida_str)(t)
-    F = sp.Function(entrada_str)(t)
+    # Criar funções simbólicas de referência (não serão usadas diretamente para comparação por identidade)
+    x_func_ref = sp.Function(saida_str)(t)
+    F_func_ref = sp.Function(entrada_str)(t)
 
     eq_str = edo_str.replace('diff', 'sp.Derivative')
     if '=' in eq_str:
         lhs, rhs = eq_str.split('=')
         eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
-    # local_dict: Apenas mapeia o nome da string para o objeto Function
-    # Remove as entradas hardcoded 'F': F, 'x': x, str(F): F, str(x): x
-    # para evitar conflitos com variáveis dinâmicas e garantir que o SymPy
-    # crie e use a mesma instância de objeto baseada no nome da string.
+    # local_dict: Mapeia o nome da string da variável para o objeto Function
+    # Isso ajuda o SymPy a parsear a EDO corretamente.
     local_dict = {
         'sp': sp, 't': t,
-        saida_str: x, 
-        entrada_str: F,
+        saida_str: x_func_ref, 
+        entrada_str: F_func_ref,
+        # Mantido do seu código original para compatibilidade com strings literais
+        'F': F_func_ref, 'x': x_func_ref,
+        str(F_func_ref): F_func_ref, str(x_func_ref): x_func_ref 
     }
     
     # Adicionar derivadas ao local_dict para sympify reconhecer
     for i in range(1, 5): # Suporta até a 4ª derivada
-        local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(x, t, i)
-        local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F, t, i)
-    local_dict[f'diff({saida_str},t)'] = sp.Derivative(x, t, 1)
-    local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1)
+        local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(x_func_ref, t, i)
+        local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F_func_ref, t, i)
+    local_dict[f'diff({saida_str},t)'] = sp.Derivative(x_func_ref, t, 1)
+    local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F_func_ref, t, 1)
 
 
     eq = sp.sympify(eq_str, locals=local_dict)
@@ -82,27 +83,29 @@ def parse_edo(edo_str, entrada_str, saida_str):
     
     # Lógica de substituição de Laplace: Iterar sobre os átomos da expressão original
     # e substituir com base nos NOMES das funções e suas ordens de derivação.
-    # Isso é mais robusto para garantir que as instâncias certas sejam substituídas.
+    # Isso é mais robusto contra problemas de identidade de objeto do SymPy.
     
     subs_map = {}
     for atom in expr_laplace.atoms():
+        # Lida com funções base (e.g., x(t), F(t))
         if isinstance(atom, sp.Function) and atom.args == (t,):
-            if str(atom.func) == saida_str:
+            if str(atom.func) == saida_str: # Comparar por nome da função
                 subs_map[atom] = Xs
-            elif str(atom.func) == entrada_str:
+            elif str(atom.func) == entrada_str: # Comparar por nome da função
                 subs_map[atom] = Fs
+        # Lida com derivadas (e.g., diff(x,t,2))
         elif isinstance(atom, sp.Derivative) and atom.expr.args == (t,):
-            base_func_of_deriv = atom.expr
+            base_func_of_deriv = atom.expr 
             order = atom.derivative_count
             
-            if str(base_func_of_deriv.func) == saida_str:
+            if str(base_func_of_deriv.func) == saida_str: # Comparar por nome da função base
                 subs_map[atom] = s**order * Xs
-            elif str(base_func_of_deriv.func) == entrada_str:
+            elif str(base_func_of_deriv.func) == entrada_str: # Comparar por nome da função base
                 subs_map[atom] = s**order * Fs
     
     expr_laplace = expr_laplace.subs(subs_map)
 
-    # Validação pós-substituição (melhoria mantida)
+    # Validação pós-substituição (melhoria mantida e aprimorada)
     for atom in expr_laplace.atoms():
         if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
            (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
@@ -113,11 +116,13 @@ def parse_edo(edo_str, entrada_str, saida_str):
     try:
         lhs = expr_laplace
         coef_Xs = lhs.coeff(Xs) # AQUI é onde falhava antes, se Xs não era identificado corretamente
+
+        # Validar se o coeficiente de Xs é zero ANTES de calcular o resto
+        if coef_Xs == 0:
+            raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada (ex: a saída não depende de si mesma ou a EDO é apenas uma constante).")
+        
         resto = lhs - coef_Xs * Xs
 
-        if coef_Xs == 0:
-            raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada.")
-        
         # Validar se o termo restante contém Fs, se não, EDO pode estar incompleta
         if Fs not in resto.free_symbols: # Se Fs não está no resto
             if resto != 0: # E o resto não é zero, significa termos não-Fs e não-Xs
@@ -155,7 +160,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
     num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
     
     if not den_coeffs or all(c == 0 for c in den_coeffs):
-        raise ValueError("O denominador da função de transferência resultou em zero ou está vazio. Verifique a equação diferencial.")
+        raise ValueError("O denominador da função de transferência resultou em zero ou está vazio após a avaliação numérica. Verifique a equação diferencial.")
     
     while len(den_coeffs) > 1 and abs(den_coeffs[0]) < 1e-9:
         den_coeffs.pop(0)
@@ -242,10 +247,7 @@ def malha_fechada_tf(Gp, Gc):
 
 def tabela_routh(coeficientes):
     # Sua versão original, com melhorias de validação de coeficientes e zeros na primeira coluna
-    # ATENÇÃO: `coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]`
-    # Essa linha em seu código original pode ser a fonte de erro 'Coeficiente simbólico '[1. 0. 1.]''
-    # pois flatten_and_convert já retorna uma lista plana de floats.
-    # Vou usar a conversão mais segura que já havíamos discutido.
+    # A linha de conversão foi feita mais robusta para garantir floats.
     try:
         coeficientes = [float(c) for c in coeficientes]
     except Exception as e:
