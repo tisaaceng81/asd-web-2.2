@@ -44,10 +44,6 @@ def pad_coeffs(num_coeffs, den_coeffs):
     return num_coeffs, den_coeffs
 
 def parse_edo(edo_str, entrada_str, saida_str):
-    """
-    Analisa uma Equação Diferencial Ordinária (EDO) para obter sua Função de Transferência.
-    Permite variáveis de entrada e saída flexíveis e lida com coeficientes simbólicos.
-    """
     t = sp.symbols('t', real=True)
     # Criar funções simbólicas para entrada e saída dinamicamente
     x = sp.Function(saida_str)(t)
@@ -83,26 +79,18 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     expr_laplace = eq
     
-    # Aplica substituições para derivadas primeiro, e depois para funções base.
-    # A ordem é importante aqui para que as derivadas sejam substituídas antes das funções base.
-    # Usa a abordagem do seu código original, mas com as funções dinâmicas x e F.
-    
-    # 1. Substituir derivadas
-    deriv_subs_map = {}
+    # Lógica de substituição de Laplace do seu código original
     for d in expr_laplace.atoms(sp.Derivative):
         ordem = d.derivative_count
         func = d.expr
         if func == x: # Usar a identidade do objeto de função
-            deriv_subs_map[d] = s**ordem * Xs
+            expr_laplace = expr_laplace.subs(d, s**ordem * Xs)
         elif func == F: # Usar a identidade do objeto de função
-            deriv_subs_map[d] = s**ordem * Fs
-    expr_laplace = expr_laplace.subs(deriv_subs_map)
-    
-    # 2. Substituir funções base
-    func_subs_map = {x: Xs, F: Fs} # Usar a identidade dos objetos de função
-    expr_laplace = expr_laplace.subs(func_subs_map)
-    
-    # Validação pós-substituição (melhoria mantida da versão anterior)
+            expr_laplace = expr_laplace.subs(d, s**ordem * Fs)
+
+    expr_laplace = expr_laplace.subs({x: Xs, F: Fs}) # Substituir funções base
+
+    # Validação pós-substituição (melhoria mantida)
     for atom in expr_laplace.atoms():
         if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
            (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
@@ -119,12 +107,12 @@ def parse_edo(edo_str, entrada_str, saida_str):
             raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada.")
         
         # Validar se o termo restante contém Fs, se não, EDO pode estar incompleta
-        if Fs not in resto.free_symbols: # Se Fs não está no resto
-            if resto != 0: # E o resto não é zero, significa termos não-Fs e não-Xs
-                 raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes inesperados: {resto}. Verifique se a EDO é linear e homogênea (assumindo CI zero) e se a variável de entrada está presente e correta.")
-            # Se resto == 0 e Fs não está lá, significa que não há termo de entrada F(t).
-            else:
-                 raise ValueError("A EDO não possui uma variável de entrada (Fs). Não é possível formar uma função de transferência X(s)/F(s).")
+        if Fs not in resto.free_symbols and resto != 0:
+            raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes sem Fs: {resto}. Verifique se a EDO é linear e se a variável de entrada está presente e correta.")
+        
+        # Caso onde Fs não está na expressão e resto é zero (sem entrada)
+        if resto == 0 and Fs not in expr_laplace.free_symbols:
+            raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. A EDO parece não ter uma entrada Fs.")
 
 
         Ls_expr = -resto / coef_Xs
@@ -297,8 +285,8 @@ def tabela_routh(coeficientes):
     return routh
 
 def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
-    # Sua função original, com validações de dados e tratamento de caminho
     y = np.array(y) # Converte para numpy array para operações
+    # Validação de dados (mantida)
     valid_indices = np.isfinite(t) & np.isfinite(y)
     t = t[valid_indices]
     y = y[valid_indices]
@@ -352,8 +340,6 @@ def plot_polos_zeros(FT):
     ax.grid(True)
     
     # Ajuste de limites para garantir que o gráfico seja sempre visível e não cortado
-    # Esta lógica é baseada na sua versão funcional, com um 'else' que estava causando SyntaxError no seu lado.
-    # Mudei para uma validação antes de ajustar.
     all_coords_real = np.concatenate((np.real(FT.poles()), np.real(FT.zeros())))
     all_coords_imag = np.concatenate((np.imag(FT.poles()), np.imag(FT.zeros())))
 
