@@ -14,13 +14,9 @@ app.secret_key = 'sua_chave_secreta' # Mantenha esta chave secreta e única em p
 # === FUNÇÕES AUXILIARES ===
 
 def flatten_and_convert(lst):
-    """
-    Achata uma lista e tenta converter seus elementos para float.
-    Levanta um erro se um elemento simbólico não puder ser avaliado.
-    """
     result = []
     for c in lst:
-        # Usar isinstance para Numpy arrays e outras iteráveis para maior robustez
+        # Usa isinstance para numpy arrays e outras iteráveis para maior robustez
         if isinstance(c, (list, tuple, np.ndarray)) or (hasattr(c, '__iter__') and not isinstance(c, (str, bytes))):
             result.extend(flatten_and_convert(c))
         else:
@@ -31,10 +27,6 @@ def flatten_and_convert(lst):
     return result
 
 def pad_coeffs(num_coeffs, den_coeffs):
-    """
-    Preenche os coeficientes do numerador e denominador com zeros
-    para que tenham o mesmo comprimento para a função de transferência.
-    """
     len_num = len(num_coeffs)
     len_den = len(den_coeffs)
     if len_num < len_den:
@@ -54,12 +46,12 @@ def parse_edo(edo_str, entrada_str, saida_str):
         lhs, rhs = eq_str.split('=')
         eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
-    # Dicionário local para sympify: crucial para que SymPy reconheça as funções e suas derivadas
-    # A ordem e a inclusão de str(F)/str(x) do seu código original são mantidas.
+    # local_dict: Usar as funções dinâmicas (x, F) e seus nomes string para SymPy reconhecer
     local_dict = {
         'sp': sp, 't': t,
-        entrada_str: F, saida_str: x,
-        'F': F, 'x': x, # Mantido do seu código original funcional para garantir o parsing
+        saida_str: x, # Mapeia nome da string para o objeto Function
+        entrada_str: F, # Mapeia nome da string para o objeto Function
+        'F': F, 'x': x, # Mantido do seu código original para compatibilidade com strings literais
         str(F): F, str(x): x # Mantido para garantir que SymPy reconheça
     }
     
@@ -73,31 +65,32 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     eq = sp.sympify(eq_str, locals=local_dict)
 
-    # Definir símbolos Laplace dinamicamente
+    # Definir símbolos Laplace dinamicamente com base em saida_str/entrada_str
     Xs = sp.symbols(f'{saida_str}s')
     Fs = sp.symbols(f'{entrada_str}s')
 
     expr_laplace = eq
     
-    # Lógica de substituição de Laplace do seu código original
+    # Lógica de substituição de Laplace do seu código original (aprimorada para símbolos dinâmicos)
     for d in expr_laplace.atoms(sp.Derivative):
         ordem = d.derivative_count
         func = d.expr
-        if func == x: # Usar a identidade do objeto de função
+        # CRÍTICO: Comparar 'func' com os objetos 'x' e 'F' dinâmicos, e substituir por Xs/Fs dinâmicos
+        if func == x: 
             expr_laplace = expr_laplace.subs(d, s**ordem * Xs)
-        elif func == F: # Usar a identidade do objeto de função
+        elif func == F:
             expr_laplace = expr_laplace.subs(d, s**ordem * Fs)
 
-    expr_laplace = expr_laplace.subs({x: Xs, F: Fs}) # Substituir funções base
+    # Substituição final de funções base (x, F) por seus símbolos Laplace (Xs, Fs)
+    expr_laplace = expr_laplace.subs({x: Xs, F: Fs})
 
-    # Validação pós-substituição (melhoria mantida da versão anterior)
+    # Validação pós-substituição (melhoria mantida)
     for atom in expr_laplace.atoms():
         if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
            (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
             raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas.")
 
-
-    # Lógica de isolamento da FT (do seu código original funcional, com validações adicionais)
+    # Lógica de isolamento da FT do seu código original (com validações adicionais)
     try:
         lhs = expr_laplace
         coef_Xs = lhs.coeff(Xs)
@@ -106,13 +99,12 @@ def parse_edo(edo_str, entrada_str, saida_str):
         if coef_Xs == 0:
             raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada.")
         
-        # Validar se o termo restante contém Fs, se não, EDO pode estar incompleta
+        # Validações para o termo restante (resto)
         if Fs not in resto.free_symbols and resto != 0:
-            raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes sem Fs: {resto}. Verifique se a EDO é linear e se a variável de entrada está presente e correta.")
+            raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes inesperados: {resto}. Verifique se a EDO é linear e homogênea (assumindo CI zero) e se a variável de entrada está presente e correta.")
         
-        # Caso onde Fs não está na expressão e resto é zero (sem entrada)
         if resto == 0 and Fs not in expr_laplace.free_symbols:
-            raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. A EDO parece não ter uma entrada Fs.")
+            raise ValueError("A EDO não possui uma variável de entrada (Fs). Não é possível formar uma função de transferência X(s)/F(s).")
 
 
         Ls_expr = -resto / coef_Xs
@@ -123,7 +115,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     num, den = sp.fraction(Ls_expr)
     
-    # Tratamento de coeficientes simbólicos (melhoria mantida da versão anterior)
+    # Tratamento de coeficientes simbólicos (melhoria mantida)
     simbolos_num = list(num.free_symbols - {s})
     simbolos_den = list(den.free_symbols - {s})
     
@@ -156,13 +148,11 @@ def parse_edo(edo_str, entrada_str, saida_str):
     return Ls_expr, FT
 
 def ft_to_latex(expr):
+    # Sua função original
     return sp.latex(expr, mul_symbol='dot')
 
 def resposta_degrau(FT, tempo=None):
-    """
-    Calcula a resposta ao degrau de uma Função de Transferência.
-    Sua versão original, com melhorias de validação e aviso para sistemas instáveis.
-    """
+    # Sua função original, com melhorias de validação e aviso para sistemas instáveis
     if tempo is None:
         tempo = np.linspace(0, 10, 1000)
     try: # Início do try block
@@ -183,7 +173,7 @@ def resposta_degrau(FT, tempo=None):
         raise ValueError(f"Não foi possível calcular a resposta ao degrau. Pode ser devido a polos instáveis ou erro na função de transferência. Erro: {e}")
 
 def estima_LT(t, y):
-    # Sua versão original da estima_LT com pequenas melhorias
+    # Sua função original da estima_LT com pequenas melhorias
     y = np.array(y)
     if np.isnan(y).any() or np.isinf(y).any():
         raise ValueError("A resposta ao degrau contém valores inválidos (NaN/Inf), impossível estimar L e T.")
@@ -297,6 +287,9 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
 
     y = y + deslocamento
 
+    # A lógica de rotação foi mantida como na sua versão original
+    # Ajuste para evitar inversão: apenas use rotações de 0, 90, 180, 270 se forem necessárias.
+    # Se a intenção é não inverter, passe rotacao=0 para a função.
     if rotacao == 180:
         t = -t[::-1]
         y = -y[::-1]
@@ -389,20 +382,20 @@ def login():
         if email == 'tisaaceng@gmail.com' and senha == '4839AT81':
             session['usuario_logado'] = email
             session['is_admin'] = True
-            flash('Login de administrador realizado com sucesso!', 'success')
+            flash('Login de administrador realizado com sucesso!', 'success') # Flash com categoria
             return redirect(url_for('admin'))
 
         if email in usuarios and usuarios[email]['senha'] == senha:
             if usuarios[email].get('aprovado', False):
                 session['usuario_logado'] = email
                 session['is_admin'] = False
-                flash('Login realizado com sucesso!', 'success')
+                flash('Login realizado com sucesso!', 'success') # Flash com categoria
                 return redirect(url_for('painel'))
             else:
-                flash('Cadastro ainda não aprovado.', 'warning')
+                flash('Cadastro ainda não aprovado.', 'warning') # Flash com categoria
                 return redirect(url_for('login'))
         else:
-            flash('Credenciais inválidas.', 'danger')
+            flash('Credenciais inválidas.', 'danger') # Flash com categoria
             return redirect(url_for('login'))
     return render_template('login.html')
 
@@ -419,14 +412,14 @@ def cadastro():
             usuarios = {}
 
         if email in usuarios or email == 'tisaaceng@gmail.com':
-            flash('Email já cadastrado ou reservado.', 'warning')
+            flash('Email já cadastrado ou reservado.', 'warning') # Flash com categoria
             return redirect(url_for('cadastro'))
 
         usuarios[email] = {'nome': nome, 'senha': senha, 'aprovado': False}
         with open('usuarios.json', 'w') as f:
             json.dump(usuarios, f, indent=4)
 
-        flash('Cadastro enviado para aprovação.', 'info')
+        flash('Cadastro enviado para aprovação.', 'info') # Flash com categoria
         return redirect(url_for('login'))
     return render_template('cadastro.html')
 
@@ -434,7 +427,7 @@ def cadastro():
 def admin():
     # Permite acesso somente se estiver logado como admin (email fixo + flag)
     if 'usuario_logado' not in session or session.get('is_admin') != True:
-        flash('Acesso negado. Apenas o administrador pode acessar.', 'danger')
+        flash('Acesso negado. Apenas o administrador pode acessar.', 'danger') # Flash com categoria
         return redirect(url_for('login'))
 
     if request.method == 'POST':
@@ -446,11 +439,11 @@ def admin():
                 usuarios[email]['aprovado'] = True
                 with open('usuarios.json', 'w') as f:
                     json.dump(usuarios, f, indent=4)
-                flash(f'{email} aprovado com sucesso!', 'success')
+                flash(f'{email} aprovado com sucesso!', 'success') # Flash com categoria
             else:
-                flash('Usuário não encontrado.', 'danger')
+                flash('Usuário não encontrado.', 'danger') # Flash com categoria
         else:
-            flash('Arquivo de usuários não encontrado.', 'warning')
+            flash('Arquivo de usuários não encontrado.', 'warning') # Flash com categoria
 
     # Mostrar apenas usuários não aprovados
     if os.path.exists('usuarios.json'):
@@ -465,7 +458,7 @@ def admin():
 @app.route('/painel')
 def painel():
     if 'usuario_logado' not in session:
-        flash('Acesso negado.', 'danger')
+        flash('Acesso negado.', 'danger') # Flash com categoria
         return redirect(url_for('login'))
     is_admin = session.get('is_admin', False) # Passa admin status
     return render_template('painel.html', admin=is_admin)
@@ -474,13 +467,13 @@ def painel():
 def logout():
     session.pop('usuario_logado', None)
     session.pop('is_admin', None)
-    flash('Logout realizado.', 'info')
+    flash('Logout realizado.', 'info') # Flash com categoria
     return redirect(url_for('login'))
 
 @app.route('/simulador', methods=['GET', 'POST'])
 def simulador():
     if 'usuario_logado' not in session:
-        flash('Faça login para acessar o simulador.', 'warning')
+        flash('Faça login para acessar o simulador.', 'warning') # Flash com categoria
         return redirect(url_for('login'))
 
     email = session['usuario_logado']
@@ -491,10 +484,10 @@ def simulador():
             with open('usuarios.json', 'r') as f:
                 usuarios = json.load(f)
             if not usuarios.get(email, {}).get('aprovado', False):
-                flash('Seu cadastro ainda não foi aprovado para usar o simulador.', 'warning')
+                flash('Seu cadastro ainda não foi aprovado para usar o simulador.', 'warning') # Flash com categoria
                 return redirect(url_for('painel'))
         else:
-            flash('Arquivo de usuários não encontrado.', 'warning')
+            flash('Arquivo de usuários não encontrado.', 'warning') # Flash com categoria
             return redirect(url_for('login'))
 
     resultado = error = None
@@ -531,7 +524,7 @@ def simulador():
                 expr_pid = sp.simplify(tf_to_sympy_tf(pid))
                 expr_mf = sp.simplify(tf_to_sympy_tf(mf))
 
-                # Salvar gráficos. Verifica se o retorno não é None (em caso de erro ou dados vazios)
+                # Salvar gráficos. A rotação deve ser 0 para evitar inversão
                 img_resposta_aberta = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', rotacao=0) 
                 img_resposta_fechada = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', rotacao=0, deslocamento=0.0) 
                 img_pz = plot_polos_zeros(FT)
@@ -562,7 +555,7 @@ def simulador():
 @app.route('/perfil')
 def perfil():
     if 'usuario_logado' not in session:
-        flash('Faça login para acessar o perfil.', 'warning')
+        flash('Faça login para acessar o perfil.', 'warning') # Flash com categoria
         return redirect(url_for('login'))
 
     email = session['usuario_logado']
@@ -579,7 +572,7 @@ def perfil():
 @app.route('/alterar_senha', methods=['GET', 'POST'])
 def alterar_senha():
     if 'usuario_logado' not in session:
-        flash('Faça login para alterar a senha.', 'warning')
+        flash('Faça login para alterar a senha.', 'warning') # Flash com categoria
         return redirect(url_for('login'))
 
     if request.method == 'POST':
@@ -595,26 +588,26 @@ def alterar_senha():
             usuarios = {}
 
         if email not in usuarios:
-            flash('Usuário não encontrado.', 'danger')
+            flash('Usuário não encontrado.', 'danger') # Flash com categoria
             return redirect(url_for('alterar_senha'))
 
         if usuarios[email]['senha'] != senha_atual:
-            flash('Senha atual incorreta.', 'danger')
+            flash('Senha atual incorreta.', 'danger') # Flash com categoria
             return redirect(url_for('alterar_senha'))
 
         if nova_senha != confirmar_senha:
-            flash('Nova senha e confirmação não conferem.', 'danger')
+            flash('Nova senha e confirmação não conferem.', 'danger') # Flash com categoria
             return redirect(url_for('alterar_senha'))
         
         if not nova_senha:
-            flash('A nova senha não pode ser vazia.', 'danger')
+            flash('A nova senha não pode ser vazia.', 'danger') # Flash com categoria
             return redirect(url_for('alterar_senha'))
 
         usuarios[email]['senha'] = nova_senha
         with open('usuarios.json', 'w') as f:
             json.dump(usuarios, f, indent=4)
 
-        flash('Senha alterada com sucesso!', 'success')
+        flash('Senha alterada com sucesso!', 'success') # Flash com categoria
         return redirect(url_for('perfil'))
 
     is_admin = session.get('is_admin', False) # Passa admin status
