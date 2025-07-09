@@ -228,7 +228,7 @@
         {% if resultado %}
             <div class="math-container">
                 <h3>Função de Transferência Calculada</h3>
-                $$ {{ resultado.ft_latex|safe }} $$
+                $${{ resultado.ft_latex|safe }}$$
             </div>
 
             {% if resultado.is_symbolic %}
@@ -238,12 +238,12 @@
             {% else %}
                 <div class="math-container">
                     <h3>Função de Transferência do PID</h3>
-                    $$ {{ resultado.pid_latex|safe }} $$
+                    $${{ resultado.pid_latex|safe }}$$
                 </div>
 
                 <div class="math-container">
                     <h3>Função de Transferência da Malha Fechada com PID</h3>
-                    $$ {{ resultado.mf_latex|safe }} $$
+                    $${{ resultado.mf_latex|safe }}$$
                 </div>
 
                 <h3>Resposta ao Degrau - Malha Aberta</h3>
