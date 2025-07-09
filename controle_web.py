@@ -47,7 +47,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
         eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
     # Dicionário local para sympify: usar as funções dinâmicas criadas
-    # Também inclui 'x' e 'F' como strings para compatibilidade, como no seu original.
+    # Também inclui 'F' e 'x' como strings para compatibilidade, como no seu original.
     local_dict = {
         'sp': sp, 't': t,
         entrada_str: F, saida_str: x,
@@ -112,7 +112,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
         
         # Caso onde Fs não está na expressão e resto é zero (sem entrada)
         if resto == 0 and Fs not in expr_laplace.free_symbols:
-            raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. A EDO parece não ter uma entrada Fs.")
+             raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. A EDO parece não ter uma entrada Fs.")
 
 
         Ls_expr = -resto / coef_Xs
@@ -170,7 +170,6 @@ def resposta_degrau(FT, tempo=None):
         
         t, y = step(FT, T=tempo)
         
-        # Verifica se a resposta explodiu (melhoria mantida)
         if np.any(np.abs(y) > 1e10):
             flash("Aviso: A resposta ao degrau apresentou valores muito grandes, indicando um sistema instável. O gráfico pode ser difícil de interpretar.", 'warning')
             y[np.abs(y) > 1e10] = np.sign(y[np.abs(y) > 1e10]) * 1e10
@@ -273,36 +272,30 @@ def tabela_routh(coeficientes):
                 
     return routh
 
-def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
+def salvar_grafico_resposta(t, y, nome): # Removidos rotacao e deslocamento
     y = np.array(y) # Converte para numpy array para operações
     # Validação de dados (mantida)
     valid_indices = np.isfinite(t) & np.isfinite(y)
-    t = t[valid_indices]
-    y = y[valid_indices]
+    # Garante que as cópias são feitas para evitar modificar arrays originais por referência
+    t_plot = t.copy()[valid_indices]
+    y_plot = y.copy()[valid_indices]
 
-    if len(t) == 0:
+    if len(t_plot) == 0:
         print(f"Aviso: Dados vazios ou inválidos para o gráfico '{nome}'. Não será gerado.")
         return None
 
-    y = y + deslocamento
-
-    # A lógica de rotação foi mantida como na sua versão original
-    if rotacao == 180:
-        t = -t[::-1]
-        y = -y[::-1]
-    elif rotacao == 90:
-        t, y = -y, t
-
-    # Garantir que eixos sejam positivos para plotagem (melhoria mantida)
-    if t.size > 0 and min(t) < 0:
-        t = t - min(t)
-    if y.size > 0 and min(y) < 0:
-        y = y - min(y)
+    # Rotacão e deslocamento removidos para plotagem direta
+    
+    # Garantir que eixos sejam positivos para plotagem (melhoria mantida, mas agora só se necessário)
+    if t_plot.size > 0 and np.min(t_plot) < 0:
+        t_plot = t_plot - np.min(t_plot)
+    if y_plot.size > 0 and np.min(y_plot) < 0:
+        y_plot = y_plot - np.min(y_plot)
 
     plt.figure(figsize=(8, 4))
-    plt.plot(t, y, label='Resposta ao Degrau')
-    plt.xlabel('Tempo (s)' if rotacao != 90 else 'Saída')
-    plt.ylabel('Saída' if rotacao != 90 else 'Tempo (s)')
+    plt.plot(t_plot, y_plot, label='Resposta ao Degrau')
+    plt.xlabel('Tempo (s)')
+    plt.ylabel('Saída')
     plt.title(nome)
     plt.grid(True)
     plt.legend()
@@ -523,8 +516,8 @@ def simulador():
                 expr_mf = sp.simplify(tf_to_sympy_tf(mf))
 
                 # Salvar gráficos. Verifica se o retorno não é None (em caso de erro ou dados vazios)
-                img_resposta_aberta = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', rotacao=0) 
-                img_resposta_fechada = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', rotacao=0, deslocamento=0.0) 
+                img_resposta_aberta = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta') 
+                img_resposta_fechada = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada') 
                 img_pz = plot_polos_zeros(FT)
 
                 den_coefs = flatten_and_convert(FT.den[0])
