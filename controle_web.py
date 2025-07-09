@@ -37,81 +37,82 @@ def pad_coeffs(num_coeffs, den_coeffs):
 
 def parse_edo(edo_str, entrada_str, saida_str):
     t = sp.symbols('t', real=True)
-    # Criar funções simbólicas para entrada e saída dinamicamente
-    x = sp.Function(saida_str)(t)
-    F = sp.Function(entrada_str)(t)
+    
+    # Criar *funções simbólicas de referência* para saída e entrada com base nos nomes dados
+    # É CRÍTICO que SymPy *crie* essas instâncias para que elas possam ser mapeadas corretamente
+    # no local_dict e depois comparadas com as que surgem do sympify da string EDO.
+    x_func_ref = sp.Function(saida_str)(t)
+    F_func_ref = sp.Function(entrada_str)(t)
 
     eq_str = edo_str.replace('diff', 'sp.Derivative')
     if '=' in eq_str:
         lhs, rhs = eq_str.split('=')
         eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
-    # Dicionário local para sympify: crucial para que SymPy reconheça as funções e suas derivadas
-    # A ordem e a inclusão de str(F)/str(x) do seu código original são mantidas.
-    local_dict = {
+    # O local_dict deve conter APENAS as instâncias de referência que SymPy criará
+    # ao processar a string, mapeando o nome da string para o objeto correto.
+    local_dict_for_sympify = {
         'sp': sp, 't': t,
-        entrada_str: F, saida_str: x,
-        'F': F, 'x': x, # Mantido do seu código original funcional para garantir o parsing
-        str(F): F, str(x): x # Mantido do seu código original funcional
+        saida_str: x_func_ref,
+        entrada_str: F_func_ref,
     }
-
-    # Adicionar derivadas ao local_dict para sympify reconhecer
+    # Adicionar derivadas ao local_dict para garantir que o SymPy as reconheça corretamente durante o parsing
     for i in range(1, 5): # Suporta até a 4ª derivada
-        local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(x, t, i)
-        local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F, t, i)
-    local_dict[f'diff({saida_str},t)'] = sp.Derivative(x, t, 1)
-    local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1)
+        local_dict_for_sympify[f'diff({saida_str},t,{i})'] = sp.Derivative(x_func_ref, t, i)
+        local_dict_for_sympify[f'diff({entrada_str},t,{i})'] = sp.Derivative(F_func_ref, t, i)
+    local_dict_for_sympify[f'diff({saida_str},t)'] = sp.Derivative(x_func_ref, t, 1)
+    local_dict_for_sympify[f'diff({entrada_str},t)'] = sp.Derivative(F_func_ref, t, 1)
 
 
-    eq = sp.sympify(eq_str, locals=local_dict)
+    eq_sym = sp.sympify(eq_str, locals=local_dict_for_sympify)
 
     # Definir símbolos Laplace dinamicamente
     Xs = sp.symbols(f'{saida_str}s')
     Fs = sp.symbols(f'{entrada_str}s')
 
-    expr_laplace = eq
+    # --- Construir o mapa de substituição de Laplace com base nos átomos REAIS de eq_sym ---
+    laplace_subs_map = {}
+    for atom in eq_sym.atoms():
+        # Lida com funções base (e.g., x(t), F(t))
+        if isinstance(atom, sp.Function) and atom.args == (t,):
+            if str(atom.func) == saida_str:
+                laplace_subs_map[atom] = Xs
+            elif str(atom.func) == entrada_str:
+                laplace_subs_map[atom] = Fs
+        # Lida com derivadas (e.g., diff(x,t,2))
+        elif isinstance(atom, sp.Derivative) and atom.expr.args == (t,):
+            base_func_of_deriv = atom.expr
+            order = atom.derivative_count
+            
+            if str(base_func_of_deriv.func) == saida_str:
+                laplace_subs_map[atom] = s**order * Xs
+            elif str(base_func_of_deriv.func) == entrada_str:
+                laplace_subs_map[atom] = s**order * Fs
     
-    # Aplica substituições para derivadas primeiro, e depois para funções base.
-    # Usa a abordagem do seu código original, mas com as funções dinâmicas x e F.
-    
-    # 1. Substituir derivadas
-    deriv_subs_map = {}
-    for d in expr_laplace.atoms(sp.Derivative):
-        ordem = d.derivative_count
-        func = d.expr
-        if func == x: # Usar a identidade do objeto de função
-            deriv_subs_map[d] = s**ordem * Xs
-        elif func == F: # Usar a identidade do objeto de função
-            deriv_subs_map[d] = s**ordem * Fs
-    expr_laplace = expr_laplace.subs(deriv_subs_map)
-    
-    # 2. Substituir funções base
-    func_subs_map = {x: Xs, F: Fs} # Usar a identidade dos objetos de função
-    expr_laplace = expr_laplace.subs(func_subs_map)
-    
-    # Validação pós-substituição (melhoria mantida da versão anterior)
+    # Aplica as substituições para obter a equação no domínio de Laplace
+    expr_laplace = eq_sym.subs(laplace_subs_map)
+
+    # Validação pós-substituição (mantido e aprimorado)
     for atom in expr_laplace.atoms():
         if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
            (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
-            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas.")
-
+            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Isso indica uma incompatibilidade na sintaxe ou nos nomes das variáveis. Tente usar nomes de variáveis simples (e.g., 'y' e 'u').")
 
     # Lógica de isolamento da FT (do seu código original funcional, com validações adicionais)
     try:
-        lhs = expr_laplace
-        coef_Xs = lhs.coeff(Xs)
-        resto = lhs - coef_Xs * Xs
+        coef_Xs = expr_laplace.coeff(Xs)
+        resto = expr_laplace - coef_Xs * Xs
 
         if coef_Xs == 0:
             raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada.")
         
         # Validar se o termo restante contém Fs, se não, EDO pode estar incompleta
-        if Fs not in resto.free_symbols and resto != 0:
-            raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes sem Fs: {resto}. Verifique se a EDO é linear e se a variável de entrada está presente e correta.")
-        
-        # Caso onde Fs não está na expressão e resto é zero (sem entrada)
-        if resto == 0 and Fs not in expr_laplace.free_symbols:
-            raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. A EDO parece não ter uma entrada Fs.")
+        if Fs not in resto.free_symbols: # Se Fs não está no resto
+            if resto != 0: # E o resto não é zero, significa termos não-Fs e não-Xs
+                 raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes inesperados: {resto}. Verifique se a EDO é linear e homogênea (assumindo CI zero) e se a variável de entrada está presente e correta.")
+            # Se resto == 0 e Fs não está lá, significa que não há termo de entrada F(t).
+            else:
+                 raise ValueError("A EDO não possui uma variável de entrada (Fs). Não é possível formar uma função de transferência X(s)/F(s).")
 
 
         Ls_expr = -resto / coef_Xs
