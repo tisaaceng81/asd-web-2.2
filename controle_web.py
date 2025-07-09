@@ -44,6 +44,10 @@ def pad_coeffs(num_coeffs, den_coeffs):
     return num_coeffs, den_coeffs
 
 def parse_edo(edo_str, entrada_str, saida_str):
+    """
+    Analisa uma Equação Diferencial Ordinária (EDO) para obter sua Função de Transferência.
+    Permite variáveis de entrada e saída flexíveis e lida com coeficientes simbólicos.
+    """
     t = sp.symbols('t', real=True)
     # Criar funções simbólicas para entrada e saída dinamicamente
     x = sp.Function(saida_str)(t)
