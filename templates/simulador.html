@@ -110,6 +110,17 @@
             margin-bottom: 20px;
             font-weight: bold;
         }
+        .warning-message { /* NOVO ESTILO */
+            background-color: #fff3cd; /* Light yellow */
+            color: #856404; /* Dark yellow */
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #ffeeba;
+            margin-top: 20px;
+            text-align: left;
+            font-size: 1.1em;
+            margin-bottom: 20px;
+        }
         form {
             background: white;
             padding: 20px;
@@ -202,100 +213,106 @@
 
         <form method="POST" action="{{ url_for('simulador') }}">
             <label for="edo">Equação Diferencial Ordinária (EDO):</label>
-            <input type="text" id="edo" name="edo" placeholder="Ex: diff(y,t,2) + 3*diff(y,t) + 2*y = 5*u" required value="{{ request.form.get('edo', '') }}">
+            <textarea id="edo" name="edo" placeholder="Ex: diff(y(t),t,2) + 2*diff(y(t),t) + y(t) = diff(u(t),t) + u(t) ou a*diff(x(t),t) + b*x(t) = k*F(t)" required>{{ request.form.get('edo', '') }}</textarea>
+            <small>Use 'diff(var(t),t,n)' para derivada de ordem n. Ex: diff(y(t),t,2) para $y''(t)$. Coeficientes podem ser numéricos ou simbólicos (ex: 'a', 'b', 'k').</small>
 
-            <label for="entrada">Variável de Entrada:</label>
-            <input type="text" id="entrada" name="entrada" placeholder="Ex: F" required value="{{ request.form.get('entrada', 'u') }}">
+            <label for="entrada">Variável de Entrada (função de t):</label>
+            <input type="text" id="entrada" name="entrada" placeholder="Ex: u" required value="{{ request.form.get('entrada', 'u') }}">
 
-            <label for="saida">Variável de Saída:</label>
-            <input type="text" id="saida" name="saida" placeholder="Ex: x" required value="{{ request.form.get('saida', 'y') }}">
+            <label for="saida">Variável de Saída (função de t):</label>
+            <input type="text" id="saida" name="saida" placeholder="Ex: y" required value="{{ request.form.get('saida', 'y') }}">
 
             <button type="submit">Calcular</button>
         </form>
 
         {% if resultado %}
-        <div class="math-container">
-            <h3>Função de Transferência Calculada</h3>
-            $$ {{ resultado.ft_latex|safe }} $$
-        </div>
+            <div class="math-container">
+                <h3>Função de Transferência Calculada</h3>
+                $$ {{ resultado.ft_latex|safe }} $$
+            </div>
 
-        <div class="math-container">
-            <h3>Função de Transferência do PID</h3>
-            $$ {{ resultado.pid_latex|safe }} $$
-        </div>
-
-        <div class="math-container">
-            <h3>Função de Transferência da Malha Fechada com PID</h3>
-            $$ {{ resultado.mf_latex|safe }} $$
-        </div>
-
-        <h3>Resposta ao Degrau - Malha Aberta</h3>
-        {% if resultado.img_resposta_aberta %}
-        <img src="{{ url_for('static', filename=resultado.img_resposta_aberta.split('/')[-1]) }}" alt="Resposta Malha Aberta" />
-        {% else %}
-        <p class="error">Não foi possível gerar o gráfico de Resposta em Malha Aberta.</p>
-        {% endif %}
-
-        <h3>Resposta ao Degrau - Malha Fechada</h3>
-        {% if resultado.img_resposta_fechada %}
-        <img src="{{ url_for('static', filename=resultado.img_resposta_fechada.split('/')[-1]) }}" alt="Resposta Malha Fechada" />
-        {% else %}
-        <p class="error">Não foi possível gerar o gráfico de Resposta em Malha Fechada.</p>
-        {% endif %}
-
-        <h3>Parâmetros PID (Ziegler-Nichols)</h3>
-        <ul>
-            <li><strong>Kp:</strong> {{ resultado.Kp|round(4) }}</li>
-            <li><strong>Ki:</strong> {{ resultado.Ki|round(4) }}</li>
-            <li><strong>Kd:</strong> {{ resultado.Kd|round(4) }}</li>
-        </ul>
-
-        <h3>Tabela de Routh</h3>
-        {% if resultado.routh_table and resultado.routh_table|length > 0 and resultado.routh_table[0]|length > 0 %}
-        <table>
-            <tbody>
-                {% for linha in resultado.routh_table %}
-                    <tr>
-                        {% for item in linha %}
-                            <td>{{ item|round(4) if item is not none }}</td>
-                        {% endfor %}
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        <p><strong>Estabilidade:</strong>
-            {% set first_column = [] %}
-            {% for row in resultado.routh_table %}
-                {% if row and row[0] is not none %}
-                    {% set _ = first_column.append(row[0]) %}
-                {% endif %}
-            {% endfor %}
-
-            {% set sign_changes = 0 %}
-            {% for i in range(first_column | length - 1) %}
-                {% if first_column[i] * first_column[i+1] < 0 %}
-                    {% set sign_changes = sign_changes + 1 %}
-                {% endif %}
-            {% endfor %}
-
-            {% if sign_changes == 0 %}
-                O sistema é <strong>estável</strong>.
+            {% if resultado.is_symbolic %}
+                <div class="warning-message">
+                    A função de transferência contém coeficientes simbólicos. A análise numérica (resposta ao degrau, polos/zeros, sintonia PID, Tabela de Routh) não pode ser realizada. Por favor, forneça coeficientes numéricos para essas análises.
+                </div>
             {% else %}
-                O sistema é <strong>instável</strong> ({{ sign_changes }} mudanças de sinal na primeira coluna).
-            {% endif %}
-        </p>
-        {% else %}
-        <p class="error">Não foi possível gerar a Tabela de Routh ou ela está vazia/inválida.</p>
-        {% endif %}
+                <div class="math-container">
+                    <h3>Função de Transferência do PID</h3>
+                    $$ {{ resultado.pid_latex|safe }} $$
+                </div>
 
-        <h3>Região de Estabilidade (Polos e Zeros)</h3>
-        {% if resultado.img_pz %}
-        <img src="{{ url_for('static', filename=resultado.img_pz) }}" alt="Diagrama de Polos e Zeros" />
-        {% else %}
-        <p class="error">Não foi possível gerar o Diagrama de Polos e Zeros.</p>
-        {% endif %}
+                <div class="math-container">
+                    <h3>Função de Transferência da Malha Fechada com PID</h3>
+                    $$ {{ resultado.mf_latex|safe }} $$
+                </div>
 
-        {% endif %}
+                <h3>Resposta ao Degrau - Malha Aberta</h3>
+                {% if resultado.img_resposta_aberta %}
+                <img src="{{ url_for('static', filename=resultado.img_resposta_aberta.split('/')[-1]) }}" alt="Resposta Malha Aberta" />
+                {% else %}
+                <p class="error">Não foi possível gerar o gráfico de Resposta em Malha Aberta.</p>
+                {% endif %}
+
+                <h3>Resposta ao Degrau - Malha Fechada</h3>
+                {% if resultado.img_resposta_fechada %}
+                <img src="{{ url_for('static', filename=resultado.img_resposta_fechada.split('/')[-1]) }}" alt="Resposta Malha Fechada" />
+                {% else %}
+                <p class="error">Não foi possível gerar o gráfico de Resposta em Malha Fechada.</p>
+                {% endif %}
+
+                <h3>Parâmetros PID (Ziegler-Nichols)</h3>
+                <ul>
+                    <li><strong>Kp:</strong> {{ resultado.Kp|round(4) }}</li>
+                    <li><strong>Ki:</strong> {{ resultado.Ki|round(4) }}</li>
+                    <li><strong>Kd:</strong> {{ resultado.Kd|round(4) }}</li>
+                </ul>
+
+                <h3>Tabela de Routh</h3>
+                {% if resultado.routh_table and resultado.routh_table|length > 0 and resultado.routh_table[0]|length > 0 %}
+                <table>
+                    <tbody>
+                        {% for linha in resultado.routh_table %}
+                            <tr>
+                                {% for item in linha %}
+                                    <td>{{ item|round(4) if item is not none }}</td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p><strong>Estabilidade:</strong>
+                    {% set first_column = [] %}
+                    {% for row in resultado.routh_table %}
+                        {% if row and row[0] is not none %}
+                            {% set _ = first_column.append(row[0]) %}
+                        {% endif %}
+                    {% endfor %}
+
+                    {% set sign_changes = 0 %}
+                    {% for i in range(first_column | length - 1) %}
+                        {% if first_column[i] * first_column[i+1] < 0 %}
+                            {% set sign_changes = sign_changes + 1 %}
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if sign_changes == 0 %}
+                        O sistema é <strong>estável</strong>.
+                    {% else %}
+                        O sistema é <strong>instável</strong> ({{ sign_changes }} mudanças de sinal na primeira coluna).
+                    {% endif %}
+                </p>
+                {% else %}
+                <p class="error">Não foi possível gerar a Tabela de Routh ou ela está vazia/inválida.</p>
+                {% endif %}
+
+                <h3>Região de Estabilidade (Polos e Zeros)</h3>
+                {% if resultado.img_pz %}
+                <img src="{{ url_for('static', filename=resultado.img_pz.split('/')[-1]) }}" alt="Diagrama de Polos e Zeros" />
+                {% else %}
+                <p class="error">Não foi possível gerar o Diagrama de Polos e Zeros.</p>
+                {% endif %}
+            {% endif %} {# End if not resultado.is_symbolic #}
+        {% endif %} {# End if resultado #}
     </div>
 </body>
 </html>
