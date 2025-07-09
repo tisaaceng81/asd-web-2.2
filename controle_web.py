@@ -14,6 +14,10 @@ app.secret_key = 'sua_chave_secreta' # Mantenha esta chave secreta e única em p
 # === FUNÇÕES AUXILIARES ===
 
 def flatten_and_convert(lst):
+    """
+    Achata uma lista e tenta converter seus elementos para float.
+    Levanta um erro se um elemento simbólico não puder ser avaliado.
+    """
     result = []
     for c in lst:
         # Corrigido para usar isinstance para numpy arrays e outras iteráveis
@@ -27,6 +31,10 @@ def flatten_and_convert(lst):
     return result
 
 def pad_coeffs(num_coeffs, den_coeffs):
+    """
+    Preenche os coeficientes do numerador e denominador com zeros
+    para que tenham o mesmo comprimento para a função de transferência.
+    """
     len_num = len(num_coeffs)
     len_den = len(den_coeffs)
     if len_num < len_den:
@@ -36,6 +44,10 @@ def pad_coeffs(num_coeffs, den_coeffs):
     return num_coeffs, den_coeffs
 
 def parse_edo(edo_str, entrada_str, saida_str):
+    """
+    Analisa uma Equação Diferencial Ordinária (EDO) para obter sua Função de Transferência.
+    Permite variáveis de entrada e saída flexíveis e lida com coeficientes simbólicos.
+    """
     t = sp.symbols('t', real=True)
     # Criar funções simbólicas para entrada e saída dinamicamente
     x = sp.Function(saida_str)(t)
@@ -47,7 +59,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
         eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
     # Dicionário local para sympify: usar as funções dinâmicas criadas
-    # Também inclui 'F' e 'x' como strings para compatibilidade, como no seu original.
+    # Também inclui 'x' e 'F' como strings para compatibilidade, como no seu original.
     local_dict = {
         'sp': sp, 't': t,
         entrada_str: F, saida_str: x,
@@ -112,7 +124,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
         
         # Caso onde Fs não está na expressão e resto é zero (sem entrada)
         if resto == 0 and Fs not in expr_laplace.free_symbols:
-             raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. A EDO parece não ter uma entrada Fs.")
+            raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. A EDO parece não ter uma entrada Fs.")
 
 
         Ls_expr = -resto / coef_Xs
@@ -153,61 +165,160 @@ def parse_edo(edo_str, entrada_str, saida_str):
         else: # Se o numerador é menor, preenche com zeros à esquerda para manter alinhamento
             num_coeffs = [0] * (len(den_coeffs) - len(num_coeffs)) + num_coeffs
 
-    # --- NOVA ETAPA: NORMALIZAÇÃO DOS COEFICIENTES DO DENOMINADOR ---
-    # Divide todos os coeficientes do numerador e denominador pelo primeiro coeficiente do denominador
-    # Isso garante que o coeficiente líder do denominador seja 1.0, o que melhora a estabilidade numérica.
-    if den_coeffs and den_coeffs[0] != 0:
-        leading_den_coeff = den_coeffs[0]
-        den_coeffs = [c / leading_den_coeff for c in den_coeffs]
-        num_coeffs = [c / leading_den_coeff for c in num_coeffs]
-    elif den_coeffs and den_coeffs[0] == 0 and len(den_coeffs) > 1: # Caso onde o primeiro é zero, mas não é o único
-        # Já deveria ter sido tratado pelo 'while' acima, mas como fallback
-        raise ValueError("Erro de normalização: O coeficiente líder do denominador é zero após a limpeza inicial. FT inválida.")
-
-
     FT = control.TransferFunction(num_coeffs, den_coeffs)
     return Ls_expr, FT
 
 def ft_to_latex(expr):
     return sp.latex(expr, mul_symbol='dot')
 
-# Modificado para aceitar rotação e deslocamento, e aplicar corretamente
-def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0): 
-    t_plot = np.array(t)
-    y_plot = np.array(y)
+def resposta_degrau(FT, tempo=None):
+    """
+    Calcula a resposta ao degrau de uma Função de Transferência.
+    Sua versão original, com melhorias de validação e aviso para sistemas instáveis.
+    """
+    if tempo is None:
+        tempo = np.linspace(0, 10, 1000)
+    try:
+        # Aumentar o tempo de simulação para sistemas instáveis ou lentos (melhoria mantida)
+        if FT.poles() is not None and np.any(np.real(FT.poles()) >= 0):
+            if tempo[-1] < 20:
+                tempo = np.linspace(0, 20, 2000)
+        
+        t, y = step(FT, T=tempo)
+        
+        # Verifica se a resposta explodiu (melhoria mantida)
+        if np.any(np.abs(y) > 1e10):
+            flash("Aviso: A resposta ao degrau apresentou valores muito grandes, indicando um sistema instável. O gráfico pode ser difícil de interpretar.", 'warning')
+            y[np.abs(y) > 1e10] = np.sign(y[np.abs(y) > 1e10]) * 1e10
 
-    valid_indices = np.isfinite(t_plot) & np.isfinite(y_plot)
-    t_plot = t_plot[valid_indices]
-    y_plot = y_plot[valid_indices]
+        return t, y
+    except Exception as e:
+        raise ValueError(f"Não foi possível calcular a resposta ao degrau. Pode ser devido a polos instáveis ou erro na função de transferência. Erro: {e}")
 
-    if len(t_plot) == 0:
+def estima_LT(t, y):
+    # Sua versão original da estima_LT com pequenas melhorias
+    y = np.array(y)
+    if np.isnan(y).any() or np.isinf(y).any():
+        raise ValueError("A resposta ao degrau contém valores inválidos (NaN/Inf), impossível estimar L e T.")
+    
+    y_final = y[-1]
+    y_inicial = y[0] # Incluído para calcular variação real
+
+    # Se a resposta final é essencialmente zero ou não variou significativamente
+    if abs(y_final - y_inicial) < 1e-6:
+        return 0.01, 0.01
+
+    # Normalizar a resposta em relação à variação total
+    y_scaled = (y - y_inicial) / (y_final - y_inicial)
+
+    try:
+        indice_inicio = next(i for i, v in enumerate(y_scaled) if v > 0.01 or v < -0.01)
+        L = t[indice_inicio]
+    except StopIteration:
+        L = 0.01
+    
+    y_63_target = 0.63
+    try:
+        indice_63 = next(i for i, v in enumerate(y_scaled) if v >= y_63_target)
+        T = t[indice_63] - L
+    except StopIteration:
+        T = 0.01
+    
+    return (L if L >= 0 else 0.01), (T if T >= 0 else 0.01) # Garante L e T positivos
+
+def sintonia_ziegler_nichols(L, T):
+    Kp = 1.2 * T / L if L != 0 else 1.0
+    Ti = 2 * L
+    Td = 0.5 * L
+    Ki = Kp / Ti if Ti != 0 else 0.0
+    Kd = Kp * Td
+    return Kp, Ki, Kd
+
+def cria_pid_tf(Kp, Ki, Kd):
+    s = control.TransferFunction.s
+    return Kp + Ki / s + Kd * s
+
+def malha_fechada_tf(Gp, Gc):
+    return control.feedback(Gp * Gc, 1)
+
+def tabela_routh(coeficientes):
+    # Sua versão original, com melhorias de validação de coeficientes e zeros na primeira coluna
+    coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
+    n = len(coeficientes)
+    
+    if n == 0 or all(c == 0 for c in coeficientes):
+        flash("Aviso: Coeficientes do denominador são todos zero ou vazios para a Tabela de Routh.", 'warning')
+        return np.array([[]])
+
+    # Remove zeros iniciais se houver (ex: 0s^2 + 2s + 1)
+    while n > 0 and abs(coeficientes[0]) < 1e-9:
+        coeficientes.pop(0)
+        n = len(coeficientes)
+    
+    if n == 0:
+        flash("Aviso: Todos os coeficientes do denominador se anularam após a remoção de zeros iniciais.", 'warning')
+        return np.array([[]])
+
+    if n == 1 and abs(coeficientes[0]) < 1e-9:
+        flash("Aviso: O único coeficiente do denominador restante é zero.", 'warning')
+        return np.array([[]])
+
+    m = (n + 1) // 2
+    routh = np.zeros((n, m))
+    
+    routh[0, :len(coeficientes[::2])] = coeficientes[::2]
+    if n > 1:
+        routh[1, :len(coeficientes[1::2])] = coeficientes[1::2]
+    
+    for i in range(2, n):
+        # Lida com o caso de zero ou quase zero na primeira coluna substituindo por um pequeno epsilon
+        if abs(routh[i - 1, 0]) < 1e-9:
+            routh[i - 1, 0] = 1e-9 # Usar um valor muito pequeno
+            flash(f"Aviso: Zero ou valor muito próximo de zero detectado na primeira coluna da linha {i-1} da Tabela de Routh. Substituindo por um pequeno valor (1e-9) para continuar o cálculo. Isso pode indicar polos no eixo imaginário ou problemas de estabilidade.", 'warning')
+
+        for j in range(m - 1):
+            a = routh[i - 2, 0]
+            b = routh[i - 1, 0]
+            c = routh[i - 2, j + 1]
+            d = routh[i - 1, j + 1]
+            
+            if abs(b) < 1e-9:
+                routh[i, j] = 0
+            else:
+                routh[i, j] = (b * c - a * d) / b
+                
+    return routh
+
+def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
+    y = np.array(y) # Converte para numpy array para operações
+    # Validação de dados (mantida)
+    valid_indices = np.isfinite(t) & np.isfinite(y)
+    t = t[valid_indices]
+    y = y[valid_indices]
+
+    if len(t) == 0:
         print(f"Aviso: Dados vazios ou inválidos para o gráfico '{nome}'. Não será gerado.")
         return None
 
-    y_plot = y_plot + deslocamento
+    y = y + deslocamento
 
-    # Lógica de rotação (reintroduzida e ajustada)
-    if rotacao == 180: # Gira 180 graus (inverte x e y)
-        t_plot = -t_plot[::-1]
-        y_plot = -y_plot[::-1]
-    elif rotacao == 90: # Gira 90 graus anti-horário (x' = -y, y' = x)
-        temp_t = t_plot.copy() # Cria cópia para evitar modificar t_plot antes de usar
-        t_plot = -y_plot
-        y_plot = temp_t
-    
+    # A lógica de rotação foi mantida como na sua versão original
+    if rotacao == 180:
+        t = -t[::-1]
+        y = -y[::-1]
+    elif rotacao == 90:
+        t, y = -y, t
+
     # Garantir que eixos sejam positivos para plotagem (melhoria mantida)
-    # Ajuste para evitar que min(t_plot) ou min(y_plot) de um array vazio cause erro
-    if t_plot.size > 0 and np.min(t_plot) < 0:
-        t_plot = t_plot - np.min(t_plot)
-    if y_plot.size > 0 and np.min(y_plot) < 0:
-        y_plot = y_plot - np.min(y_plot)
-
+    if t.size > 0 and min(t) < 0:
+        t = t - min(t)
+    if y.size > 0 and min(y) < 0:
+        y = y - min(y)
 
     plt.figure(figsize=(8, 4))
-    plt.plot(t_plot, y_plot, label='Resposta ao Degrau')
-    # Rótulos dos eixos ajustados para a rotação de 90 graus
-    plt.xlabel('Saída' if rotacao == 90 else 'Tempo (s)')
-    plt.ylabel('Tempo (s)' if rotacao == 90 else 'Saída')
+    plt.plot(t, y, label='Resposta ao Degrau')
+    plt.xlabel('Tempo (s)' if rotacao != 90 else 'Saída')
+    plt.ylabel('Saída' if rotacao != 90 else 'Tempo (s)')
     plt.title(nome)
     plt.grid(True)
     plt.legend()
@@ -223,7 +334,7 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
     return caminho
 
 def plot_polos_zeros(FT):
-    # Sua versão original da função, com pequenas melhorias de validação
+    # Sua versão original, com pequenas melhorias de validação
     fig, ax = plt.subplots()
     ax.scatter(np.real(FT.poles()), np.imag(FT.poles()), marker='x', color='red', label='Polos')
     ax.scatter(np.real(FT.zeros()), np.imag(FT.zeros()), marker='o', color='blue', label='Zeros')
@@ -428,9 +539,8 @@ def simulador():
                 expr_mf = sp.simplify(tf_to_sympy_tf(mf))
 
                 # Salvar gráficos. Verifica se o retorno não é None (em caso de erro ou dados vazios)
-                # Chamadas de salvar_grafico_resposta ajustadas para usar a rotação e deslocamento desejados
-                img_resposta_aberta = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', rotacao=180, deslocamento=0.0) 
-                img_resposta_fechada = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', rotacao=90, deslocamento=1.0) 
+                img_resposta_aberta = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', rotacao=0) 
+                img_resposta_fechada = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', rotacao=0, deslocamento=0.0) 
                 img_pz = plot_polos_zeros(FT)
 
                 den_coefs = flatten_and_convert(FT.den[0])
@@ -466,8 +576,8 @@ def perfil():
     if os.path.exists('usuarios.json'):
         with open('usuarios.json', 'r') as f:
             usuarios = json.load(f)
-    else:
-        usuarios = {}
+        else:
+            usuarios = {}
 
     usuario = usuarios.get(email)
     is_admin = session.get('is_admin', False) # Passa admin status
