@@ -9,7 +9,11 @@ from control.matlab import step
 from sympy.abc import s
 
 app = Flask(__name__)
-app.secret_key = 'sua_chave_secreta' # Mantenha esta chave secreta e única em produção
+# !!! AVISO DE SEGURANÇA CRÍTICO !!!
+# Esta chave secreta deve ser um valor longo, aleatório e mantida em segredo absoluto.
+# Em produção, use uma variável de ambiente (ex: os.environ.get('SECRET_KEY')).
+# Nunca a deixe hardcoded desta forma.
+app.secret_key = 'sua_chave_secreta_MUITO_SECRETA_E_ALEATORIA_PRODUCAO' # Mantenha esta chave secreta e única em produção
 
 # === FUNÇÕES AUXILIARES ===
 
@@ -40,10 +44,10 @@ def parse_edo(edo_str, entrada_str, saida_str):
     x = sp.Function(saida_str)(t)
     F = sp.Function(entrada_str)(t)
 
-    eq_str = edo_str.replace('diff', 'sp.Derivative')
-    if '=' in eq_str:
-        lhs, rhs = eq_str.split('=')
-        eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
+    eq_str_processed = edo_str.replace('diff', 'sp.Derivative')
+    if '=' in eq_str_processed:
+        lhs, rhs = eq_str_processed.split('=')
+        eq_str_processed = f"({lhs.strip()}) - ({rhs.strip()})"
 
     # local_dict precisa incluir as funções simbólicas criadas
     local_dict = {
@@ -54,16 +58,16 @@ def parse_edo(edo_str, entrada_str, saida_str):
     }
     
     # Adicionar as derivadas ao local_dict para que sympify as reconheça corretamente
-    # Isso é crucial para que as instâncias de Derivative sejam as mesmas
-    # que SymPy cria ao analisar a string.
     for i in range(1, 5): # Suporta até a 4ª derivada
         local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(x, t, i)
         local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F, t, i)
     local_dict[f'diff({saida_str},t)'] = sp.Derivative(x, t, 1)
     local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1)
 
-
-    eq = sp.sympify(eq_str, locals=local_dict)
+    try:
+        eq = sp.sympify(eq_str_processed, locals=local_dict)
+    except Exception as e:
+        raise ValueError(f"Erro ao interpretar a Equação Diferencial Ordinária (EDO): '{e}'. Verifique a sintaxe da EDO. Ex: 'diff(x,t,2) + x = F'")
 
     # Definir Xs e Fs com base nas strings de entrada/saída
     Xs = sp.symbols(f'{saida_str}s')
@@ -72,7 +76,6 @@ def parse_edo(edo_str, entrada_str, saida_str):
     expr_laplace = eq
     
     # Percorrer os átomos da expressão para substituir as funções e derivadas
-    # Isso garante que estamos substituindo as instâncias corretas que SymPy criou.
     subs_map = {}
     for atom in expr_laplace.atoms():
         if isinstance(atom, sp.Function):
@@ -88,42 +91,50 @@ def parse_edo(edo_str, entrada_str, saida_str):
                     subs_map[atom] = s**order * Xs
                 elif str(base_func.func) == entrada_str:
                     subs_map[atom] = s**order * Fs
-    
+            
     expr_laplace = expr_laplace.subs(subs_map)
 
     # Verificar se restaram termos no domínio do tempo após a substituição
     for atom in expr_laplace.atoms():
         if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
            (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
-            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas.")
+            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Certifique-se de que todas as funções de tempo e suas derivadas foram corretamente especificadas ou substituídas.")
 
-
-    # Isolamento da Função de Transferência (baseado na sua versão funcional, com mais validações)
+    # === INÍCIO DAS CORREÇÕES E MELHORIAS NAS MENSAGENS DE ERRO ===
     try:
         coef_Xs = expr_laplace.coeff(Xs)
-        # O resto da expressão deve ser o termo com Fs (ou zero)
-        resto = expr_laplace - coef_Xs * Xs
         
         if coef_Xs == 0:
-            raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada.")
+            if Xs not in expr_laplace.free_symbols:
+                # Caso 1: A variável de saída (X) não foi encontrada na EDO após a transformação.
+                raise ValueError(f"A variável de saída '{saida_str}' (transformada em '{Xs}') não foi encontrada na equação após a transformação de Laplace. Verifique se a EDO realmente depende da variável de saída fornecida ou se a sintaxe está correta (ex: 'x' em vez de 'X').")
+            else:
+                # Caso 2: Os termos da variável de saída (X) se cancelaram ou somaram a zero.
+                raise ValueError(f"Os termos da variável de saída '{saida_str}' (transformada em '{Xs}') na EDO se cancelaram ou resultaram em um coeficiente nulo ({coef_Xs}) após a transformação de Laplace. Isso impede o cálculo da Função de Transferência. Verifique a linearidade ou a forma da EDO.")
 
-        # Se Fs não está no resto, mas a expressão não é zero, pode ser uma EDO sem entrada ou mal formada
-        if Fs not in resto.free_symbols and resto != 0:
-            raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes sem Fs: {resto}. Verifique se a EDO é linear e se a variável de entrada está presente e correta.")
+        resto = expr_laplace - coef_Xs * Xs
         
-        # Se o resto é zero, significa que não há termo Fs, o que é um problema para a FT
+        if Fs not in resto.free_symbols and resto != 0:
+            # Caso 3: A variável de entrada (F) não foi encontrada na parte restante da EDO.
+            raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes sem a variável de entrada '{entrada_str}' (transformada em '{Fs}'): '{resto}'. Verifique se a EDO é linear em F e se a variável de entrada está presente e correta (Ex: use 'k*F' no lugar de 'F*k' se 'k' for um símbolo).")
+            
         if resto == 0 and Fs not in expr_laplace.free_symbols:
-             raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. Verifique a EDO e a variável de entrada. (Ex: F não está presente na EDO ou tem coeficiente zero).")
+            # Caso 4: A variável de entrada (F) não foi identificada ou tem coeficiente zero na EDO.
+            raise ValueError(f"Não foi possível identificar a variável de entrada '{entrada_str}' (transformada em '{Fs}') na equação transformada para Laplace. Verifique se a EDO inclui a variável de entrada e se o seu coeficiente não é zero (Ex: 'k*F' em vez de '0*F').")
 
         Ls_expr = -resto / coef_Xs
         Ls_expr = sp.simplify(Ls_expr.subs(Fs, 1)) # Assume Fs=1 para a FT
 
+    except ValueError as ve: # Re-lança os erros ValueError específicos
+        raise ve
     except Exception as e:
-        raise ValueError(f"Não foi possível isolar a Função de Transferência. Verifique a EDO e as variáveis de entrada/saída. Erro: {e}")
+        # Erro genérico para problemas inesperados durante o isolamento da FT
+        raise ValueError(f"Um erro inesperado ocorreu durante o isolamento da Função de Transferência: {e}. Verifique a EDO e as variáveis de entrada/saída.")
+    # === FIM DAS CORREÇÕES E MELHORIAS NAS MENSAGENS DE ERRO ===
 
     num, den = sp.fraction(Ls_expr)
     
-    # Lidar com coeficientes simbólicos (mantido da versão anterior)
+    # Lidar com coeficientes simbólicos
     simbolos_num = list(num.free_symbols - {s})
     simbolos_den = list(den.free_symbols - {s})
     
@@ -142,7 +153,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     if not den_coeffs or all(c == 0 for c in den_coeffs):
         raise ValueError("O denominador da função de transferência resultou em zero ou está vazio. Verifique a equação diferencial.")
-    
+        
     # Remover zeros iniciais do denominador se houver (ex: [0, 1, 2] -> [1, 2])
     while len(den_coeffs) > 1 and abs(den_coeffs[0]) < 1e-9:
         den_coeffs.pop(0)
@@ -165,12 +176,12 @@ def resposta_degrau(FT, tempo=None):
     try:
         # Aumentar o tempo de simulação para sistemas instáveis ou lentos
         if FT.poles() is not None and np.any(np.real(FT.poles()) >= 0):
-            if tempo[-1] < 20:
+            if tempo[-1] < 20: # Aumenta o tempo se houver polos no semiplano direito (instável)
                 tempo = np.linspace(0, 20, 2000)
         
         t, y = step(FT, T=tempo)
         
-        if np.any(np.abs(y) > 1e10):
+        if np.any(np.abs(y) > 1e10): # Limita valores muito grandes para não estourar o gráfico
             flash("Aviso: A resposta ao degrau apresentou valores muito grandes, indicando um sistema instável. O gráfico pode ser difícil de interpretar.", 'warning')
             y[np.abs(y) > 1e10] = np.sign(y[np.abs(y) > 1e10]) * 1e10
 
@@ -184,12 +195,28 @@ def estima_LT(t, y):
     if abs(y_final) < 1e-6 or (max(y) - min(y) < 1e-6): # Se a resposta final é essencialmente zero ou não muda
         return 0.01, 0.01 # Retorna valores pequenos para evitar divisão por zero ou erros
 
-    indice_inicio = next(i for i, v in enumerate(y) if v > 0.01 * y_final)
+    # Encontrar L (tempo morto) e T (constante de tempo)
+    # Adaptação para evitar erros se y_final for zero ou muito pequeno
+    if abs(y_final) < 1e-6:
+        L_threshold = 0.01 * (max(y) - min(y)) + min(y)
+        y_63_target = 0.63 * (max(y) - min(y)) + min(y)
+    else:
+        L_threshold = 0.01 * y_final
+        y_63_target = 0.63 * y_final
+
+
+    indice_inicio = next((i for i, v in enumerate(y) if v > L_threshold), 0)
     L = t[indice_inicio]
-    y_63 = 0.63 * y_final
-    indice_63 = next(i for i, v in enumerate(y) if v >= y_63)
-    T = t[indice_63] - L
-    return (L if L >= 0 else 0.01), (T if T >= 0 else 0.01) # Garante valores positivos
+
+    indice_63 = next((i for i, v in enumerate(y) if v >= y_63_target), len(y) - 1)
+    T_estimado = t[indice_63] - L
+
+    # Garante que L e T sejam positivos e com valor mínimo para evitar divisão por zero
+    L = L if L >= 0 else 0.01
+    T_estimado = T_estimado if T_estimado >= 0 else 0.01
+
+    return L, T_estimado
+
 
 def sintonia_ziegler_nichols(L, T):
     Kp = 1.2 * T / L if L != 0 else 1.0
@@ -200,45 +227,45 @@ def sintonia_ziegler_nichols(L, T):
     return Kp, Ki, Kd
 
 def cria_pid_tf(Kp, Ki, Kd):
-    s = control.TransferFunction.s
-    return Kp + Ki / s + Kd * s
+    s_sym = control.TransferFunction.s # Usar s_sym para evitar conflito com 's' de SymPy.abc
+    return Kp + Ki / s_sym + Kd * s_sym
 
 def malha_fechada_tf(Gp, Gc):
     return control.feedback(Gp * Gc, 1)
 
 def tabela_routh(coeficientes):
     # Certifica que os coeficientes são numéricos antes de construir a tabela
-    coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
-    n = len(coeficientes)
+    coeficientes_numericos = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
+    n = len(coeficientes_numericos)
     
-    if n == 0 or all(c == 0 for c in coeficientes):
+    if n == 0 or all(c == 0 for c in coeficientes_numericos):
         flash("Aviso: Coeficientes do denominador são todos zero ou vazios para a Tabela de Routh.", 'warning')
         return np.array([[]])
 
     # Remove zeros iniciais se houver (ex: 0s^2 + 2s + 1)
-    while n > 0 and abs(coeficientes[0]) < 1e-9:
-        coeficientes.pop(0)
-        n = len(coeficientes)
-    
+    while n > 0 and abs(coeficientes_numericos[0]) < 1e-9:
+        coeficientes_numericos.pop(0)
+        n = len(coeficientes_numericos)
+        
     if n == 0:
-        flash("Aviso: Todos os coeficientes do denominador se anularam após a remoção de zeros iniciais.", 'warning')
+        flash("Aviso: Todos os coeficientes do denominador se anularam após a remoção de zeros iniciais na Tabela de Routh.", 'warning')
         return np.array([[]])
 
-    if n == 1 and abs(coeficientes[0]) < 1e-9:
-        flash("Aviso: O único coeficiente do denominador restante é zero.", 'warning')
+    if n == 1 and abs(coeficientes_numericos[0]) < 1e-9:
+        flash("Aviso: O único coeficiente do denominador restante é zero para a Tabela de Routh.", 'warning')
         return np.array([[]])
 
     m = (n + 1) // 2
     routh = np.zeros((n, m))
     
-    routh[0, :len(coeficientes[::2])] = coeficientes[::2]
+    routh[0, :len(coeficientes_numericos[::2])] = coeficientes_numericos[::2]
     if n > 1:
-        routh[1, :len(coeficientes[1::2])] = coeficientes[1::2]
+        routh[1, :len(coeficientes_numericos[1::2])] = coeficientes_numericos[1::2]
     
     for i in range(2, n):
         # Lida com o caso de zero ou quase zero na primeira coluna substituindo por um pequeno epsilon
         if abs(routh[i - 1, 0]) < 1e-9:
-            routh[i - 1, 0] = 1e-9 # Usar um valor muito pequeno
+            routh[i - 1, 0] = 1e-9 # Usar um valor muito pequeno para continuar o cálculo
             flash(f"Aviso: Zero ou valor muito próximo de zero detectado na primeira coluna da linha {i-1} da Tabela de Routh. Substituindo por um pequeno valor (1e-9) para continuar o cálculo. Isso pode indicar polos no eixo imaginário ou problemas de estabilidade.", 'warning')
 
         for j in range(m - 1):
@@ -248,7 +275,7 @@ def tabela_routh(coeficientes):
             d = routh[i - 1, j + 1]
             
             if abs(b) < 1e-9:
-                routh[i, j] = 0
+                routh[i, j] = 0 # Evita divisão por zero, implica uma linha de zeros ou erro grave
             else:
                 routh[i, j] = (b * c - a * d) / b
                 
@@ -266,18 +293,27 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
         print(f"Aviso: Dados vazios ou inválidos para o gráfico '{nome}'. Não será gerado.")
         return None
 
+    # Aplica deslocamento (se houver)
     y = y + deslocamento
 
+    # Aplica rotação (se especificado)
     if rotacao == 180:
         t = -t[::-1]
         y = -y[::-1]
     elif rotacao == 90:
-        t, y = -y, t # Sua versão original usava -y, t
+        t, y = -y, t # Rotação de 90 graus (eixo x vira y, y vira x)
 
-    if t.size > 0 and min(t) < 0:
-        t = t - min(t)
-    if y.size > 0 and min(y) < 0:
-        y = y - min(y)
+    # Normaliza para começar em zero (se necessário)
+    # Isso é importante se a rotação ou deslocamento causar valores negativos no início
+    if t.size > 0:
+        t_min = t.min()
+        if t_min < 0:
+            t = t - t_min # Desloca para que o mínimo seja 0
+    
+    if y.size > 0:
+        y_min = y.min()
+        if y_min < 0:
+            y = y - y_min # Desloca para que o mínimo seja 0
 
     plt.figure(figsize=(8, 4))
     plt.plot(t, y, label='Resposta ao Degrau')
@@ -289,6 +325,8 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
     plt.tight_layout()
     caminho = os.path.join('static', f'{nome}.png')
     try:
+        # Garante que o diretório 'static' existe
+        os.makedirs('static', exist_ok=True)
         plt.savefig(caminho)
     except Exception as e:
         print(f"Erro ao salvar o gráfico '{nome}': {e}")
@@ -299,8 +337,15 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
 
 def plot_polos_zeros(FT):
     fig, ax = plt.subplots()
-    ax.scatter(np.real(FT.poles()), np.imag(FT.poles()), marker='x', color='red', label='Polos')
-    ax.scatter(np.real(FT.zeros()), np.imag(FT.zeros()), marker='o', color='blue', label='Zeros')
+    poles = FT.poles()
+    zeros = FT.zeros()
+
+    # Desenha polos e zeros, evitando arrays vazios
+    if poles.size > 0:
+        ax.scatter(np.real(poles), np.imag(poles), marker='x', color='red', s=100, label='Polos')
+    if zeros.size > 0:
+        ax.scatter(np.real(zeros), np.imag(zeros), marker='o', color='blue', s=100, facecolors='none', edgecolors='blue', label='Zeros')
+    
     ax.axhline(0, color='black', linewidth=0.5)
     ax.axvline(0, color='black', linewidth=0.5)
     ax.set_xlabel('Re')
@@ -308,27 +353,30 @@ def plot_polos_zeros(FT):
     ax.set_title('Diagrama de Polos e Zeros')
     ax.legend()
     ax.grid(True)
+    
     # Ajuste de limites para garantir que o gráfico seja sempre visível e não cortado
-    # Se não houver polos/zeros finitos, os limites padrão serão usados.
-    # Se houver, os limites serão ajustados dinamicamente com uma margem.
-    all_coords_real = np.concatenate((np.real(FT.poles()), np.real(FT.zeros())))
-    all_coords_imag = np.concatenate((np.imag(FT.poles()), np.imag(FT.zeros())))
+    all_coords_real = np.concatenate((np.real(poles), np.real(zeros)))
+    all_coords_imag = np.concatenate((np.imag(poles), np.imag(zeros)))
 
     if all_coords_real.size > 0 and all_coords_imag.size > 0:
         min_re, max_re = all_coords_real.min(), all_coords_real.max()
         min_im, max_im = all_coords_imag.min(), all_coords_imag.max()
 
+        # Adiciona uma margem para os limites
         margin_re = max(0.5, (max_re - min_re) * 0.1)
         margin_im = max(0.5, (max_im - min_im) * 0.1)
 
         ax.set_xlim(min_re - margin_re, max_re + margin_re)
         ax.set_ylim(min_im - margin_im, max_im + margin_im)
     else:
-        ax.set_xlim(-2, 2) # Limites padrão se não houver polos/zeros finitos
+        # Limites padrão se não houver polos/zeros finitos (e.g., FT constante)
+        ax.set_xlim(-2, 2)
         ax.set_ylim(-2, 2)
 
+    ax.set_aspect('equal', adjustable='box') # Proporção igual para eixos
     caminho = os.path.join('static', 'polos_zeros.png')
     try:
+        os.makedirs('static', exist_ok=True) # Garante que o diretório 'static' existe
         plt.savefig(caminho)
     except Exception as e:
         print(f"Erro ao salvar o gráfico de Polos e Zeros: {e}")
@@ -342,7 +390,7 @@ def plot_polos_zeros(FT):
 @app.route('/')
 def home():
     user_email = session.get('usuario_logado')
-    is_admin = session.get('is_admin', False) # Passa admin status
+    is_admin = session.get('is_admin', False)
     return render_template('index.html', user_email=user_email, admin=is_admin)
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -350,30 +398,42 @@ def login():
     if request.method == 'POST':
         email = request.form['email']
         senha = request.form['senha']
-        if os.path.exists('usuarios.json'):
-            with open('usuarios.json', 'r') as f:
-                usuarios = json.load(f)
-        else:
-            usuarios = {}
 
-        # Admin fixo com email e senha definidos
+        # AVISO DE SEGURANÇA CRÍTICO: Credenciais de admin hardcoded.
+        # Em produção, o admin deve ser gerenciado de forma segura (ex: variáveis de ambiente, banco de dados).
         if email == 'tisaaceng@gmail.com' and senha == '4839AT81':
             session['usuario_logado'] = email
             session['is_admin'] = True
             flash('Login de administrador realizado com sucesso!', 'success')
             return redirect(url_for('admin'))
 
-        if email in usuarios and usuarios[email]['senha'] == senha:
-            if usuarios[email].get('aprovado', False):
-                session['usuario_logado'] = email
-                session['is_admin'] = False
-                flash('Login realizado com sucesso!', 'success')
-                return redirect(url_for('painel'))
+        usuarios = {}
+        if os.path.exists('usuarios.json'):
+            try:
+                with open('usuarios.json', 'r') as f:
+                    usuarios = json.load(f)
+            except json.JSONDecodeError:
+                flash("Erro ao carregar dados de usuários. Arquivo 'usuarios.json' pode estar corrompido.", 'danger')
+                usuarios = {} # Reseta para evitar erros subsequentes
+
+        if email in usuarios:
+            # AVISO DE SEGURANÇA CRÍTICO: Senhas armazenadas em texto plano.
+            # Use hashing de senhas (ex: Flask-Bcrypt ou werkzeug.security.generate_password_hash/check_password_hash)
+            # Nunca armazene senhas em texto plano em produção.
+            if usuarios[email]['senha'] == senha:
+                if usuarios[email].get('aprovado', False):
+                    session['usuario_logado'] = email
+                    session['is_admin'] = False
+                    flash('Login realizado com sucesso!', 'success')
+                    return redirect(url_for('painel'))
+                else:
+                    flash('Seu cadastro ainda não foi aprovado. Por favor, aguarde a aprovação do administrador.', 'warning')
+                    return redirect(url_for('login'))
             else:
-                flash('Cadastro ainda não aprovado.', 'warning')
+                flash('Credenciais inválidas. Verifique seu email e senha.', 'danger')
                 return redirect(url_for('login'))
         else:
-            flash('Credenciais inválidas.', 'danger')
+            flash('Credenciais inválidas. Verifique seu email e senha.', 'danger')
             return redirect(url_for('login'))
     return render_template('login.html')
 
@@ -383,69 +443,81 @@ def cadastro():
         nome = request.form['nome']
         email = request.form['email']
         senha = request.form['senha']
-        if os.path.exists('usuarios.json'):
-            with open('usuarios.json', 'r') as f:
-                usuarios = json.load(f)
-        else:
-            usuarios = {}
 
-        if email in usuarios or email == 'tisaaceng@gmail.com':
-            flash('Email já cadastrado ou reservado.', 'warning')
+        usuarios = {}
+        if os.path.exists('usuarios.json'):
+            try:
+                with open('usuarios.json', 'r') as f:
+                    usuarios = json.load(f)
+            except json.JSONDecodeError:
+                flash("Erro ao carregar dados de usuários. Arquivo 'usuarios.json' pode estar corrompido. Tente novamente.", 'danger')
+                return redirect(url_for('cadastro'))
+
+        if email in usuarios or email == 'tisaaceng@gmail.com': # Evita que email do admin seja cadastrado como usuário normal
+            flash('Este email já está cadastrado ou reservado.', 'warning')
             return redirect(url_for('cadastro'))
 
+        # AVISO DE SEGURANÇA CRÍTICO: Senhas armazenadas em texto plano.
+        # Use hashing de senhas antes de salvar.
         usuarios[email] = {'nome': nome, 'senha': senha, 'aprovado': False}
-        with open('usuarios.json', 'w') as f:
-            json.dump(usuarios, f, indent=4)
-
-        flash('Cadastro enviado para aprovação.', 'info')
-        return redirect(url_for('login'))
+        
+        try:
+            with open('usuarios.json', 'w') as f:
+                json.dump(usuarios, f, indent=4)
+            flash('Cadastro enviado para aprovação. Você será notificado após a aprovação.', 'info')
+            return redirect(url_for('login'))
+        except IOError as e:
+            flash(f"Erro ao salvar o cadastro: {e}. Tente novamente mais tarde.", 'danger')
+            return redirect(url_for('cadastro'))
+            
     return render_template('cadastro.html')
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
     # Permite acesso somente se estiver logado como admin (email fixo + flag)
-    if 'usuario_logado' not in session or session.get('is_admin') != True:
-        flash('Acesso negado. Apenas o administrador pode acessar.', 'danger')
+    if 'usuario_logado' not in session or not session.get('is_admin'):
+        flash('Acesso negado. Apenas o administrador pode acessar esta página.', 'danger')
         return redirect(url_for('login'))
 
-    if request.method == 'POST':
-        email = request.form.get('email')
-        if os.path.exists('usuarios.json'):
+    usuarios = {}
+    if os.path.exists('usuarios.json'):
+        try:
             with open('usuarios.json', 'r') as f:
                 usuarios = json.load(f)
-            if email in usuarios:
-                usuarios[email]['aprovado'] = True
+        except json.JSONDecodeError:
+            flash("Erro ao carregar dados de usuários. Arquivo 'usuarios.json' pode estar corrompido.", 'danger')
+            usuarios = {}
+
+    if request.method == 'POST':
+        email_to_approve = request.form.get('email')
+        if email_to_approve and email_to_approve in usuarios:
+            usuarios[email_to_approve]['aprovado'] = True
+            try:
                 with open('usuarios.json', 'w') as f:
                     json.dump(usuarios, f, indent=4)
-                flash(f'{email} aprovado com sucesso!', 'success')
-            else:
-                flash('Usuário não encontrado.', 'danger')
+                flash(f'Usuário {email_to_approve} aprovado com sucesso!', 'success')
+            except IOError as e:
+                flash(f"Erro ao salvar aprovação: {e}.", 'danger')
         else:
-            flash('Arquivo de usuários não encontrado.', 'warning')
+            flash('Usuário não encontrado para aprovação.', 'danger')
 
     # Mostrar apenas usuários não aprovados
-    if os.path.exists('usuarios.json'):
-        with open('usuarios.json', 'r') as f:
-            usuarios = json.load(f)
-        nao_aprovados = {k: v for k, v in usuarios.items() if not v.get('aprovado', False)}
-    else:
-        nao_aprovados = {}
-
-    return render_template('admin.html', usuarios=nao_aprovados, admin=True) # Passa admin=True
+    nao_aprovados = {k: v for k, v in usuarios.items() if not v.get('aprovado', False)}
+    return render_template('admin.html', usuarios=nao_aprovados, admin=True)
 
 @app.route('/painel')
 def painel():
     if 'usuario_logado' not in session:
-        flash('Acesso negado.', 'danger')
+        flash('Acesso negado. Por favor, faça login.', 'danger')
         return redirect(url_for('login'))
-    is_admin = session.get('is_admin', False) # Passa admin status
+    is_admin = session.get('is_admin', False)
     return render_template('painel.html', admin=is_admin)
 
 @app.route('/logout')
 def logout():
     session.pop('usuario_logado', None)
     session.pop('is_admin', None)
-    flash('Logout realizado.', 'info')
+    flash('Você saiu da sua conta.', 'info')
     return redirect(url_for('login'))
 
 @app.route('/simulador', methods=['GET', 'POST'])
@@ -456,20 +528,23 @@ def simulador():
 
     email = session['usuario_logado']
 
-    # Verificar se usuário está aprovado
-    if not session.get('is_admin', False): # Admin não precisa estar aprovado para acessar o simulador
+    # Verificar se usuário está aprovado (exceto admin)
+    if not session.get('is_admin', False):
+        usuarios = {}
         if os.path.exists('usuarios.json'):
-            with open('usuarios.json', 'r') as f:
-                usuarios = json.load(f)
-            if not usuarios.get(email, {}).get('aprovado', False):
-                flash('Seu cadastro ainda não foi aprovado para usar o simulador.', 'warning')
-                return redirect(url_for('painel'))
-        else:
-            flash('Arquivo de usuários não encontrado.', 'warning')
-            return redirect(url_for('login'))
+            try:
+                with open('usuarios.json', 'r') as f:
+                    usuarios = json.load(f)
+            except json.JSONDecodeError:
+                flash("Erro ao carregar dados de usuários para verificação. Arquivo 'usuarios.json' pode estar corrompido.", 'danger')
+                return redirect(url_for('painel')) # Ou login
 
+        if not usuarios.get(email, {}).get('aprovado', False):
+            flash('Seu cadastro ainda não foi aprovado para usar o simulador. Por favor, aguarde a aprovação do administrador.', 'warning')
+            return redirect(url_for('painel'))
+    
     resultado = error = None
-    is_admin = session.get('is_admin', False) # Passa admin status
+    is_admin = session.get('is_admin', False)
 
     if request.method == 'POST':
         edo = request.form.get('edo')
@@ -477,24 +552,34 @@ def simulador():
         saida = request.form.get('saida')
 
         if not edo or not entrada or not saida:
-            error = "Preencha todos os campos."
+            error = "Por favor, preencha todos os campos: Equação Diferencial, Variável de Entrada e Variável de Saída."
+            flash(error, 'danger')
         else:
             try:
                 Ls_expr, FT = parse_edo(edo, entrada, saida)
                 ft_latex = ft_to_latex(Ls_expr)
+                
+                # Resposta ao degrau em malha aberta
                 t_open, y_open = resposta_degrau(FT)
+                
+                # Estima L e T para sintonia
                 L, T = estima_LT(t_open, y_open)
+                
+                # Sintonia PID
                 Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
+                
+                # Cria controlador PID e FT de malha fechada
                 pid = cria_pid_tf(Kp, Ki, Kd)
                 mf = malha_fechada_tf(FT, pid)
+                
+                # Resposta ao degrau em malha fechada
                 t_closed, y_closed = resposta_degrau(mf)
 
-                def tf_to_sympy_tf(tf_control_obj): # Renomeado para evitar conflito com 'tf' local
-                    # Garante que tf_control_obj.num[0][0] e tf_control_obj.den[0][0] são listas
+                # Converte TFs do control para SymPy para exibir em LaTeX
+                def tf_to_sympy_tf(tf_control_obj):
                     num_list = tf_control_obj.num[0][0]
                     den_list = tf_control_obj.den[0][0]
-
-                    s_sym = sp.symbols('s') # Garante 's' simbólico para esta função
+                    s_sym = sp.symbols('s')
                     num_poly = sum(coef * s_sym**(len(num_list)-i-1) for i, coef in enumerate(num_list))
                     den_poly = sum(coef * s_sym**(len(den_list)-i-1) for i, coef in enumerate(den_list))
                     return num_poly / den_poly
@@ -502,11 +587,12 @@ def simulador():
                 expr_pid = sp.simplify(tf_to_sympy_tf(pid))
                 expr_mf = sp.simplify(tf_to_sympy_tf(mf))
 
-                # Salvar gráficos. Verifica se o retorno não é None (em caso de erro ou dados vazios)
-                img_resposta_aberta = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', rotacao=0) # Sua versão original era 180, mudei para 0
-                img_resposta_fechada = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', rotacao=0, deslocamento=0.0) # Sua versão original era 90, mudei para 0
+                # Salvar gráficos
+                img_resposta_aberta = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', rotacao=0)
+                img_resposta_fechada = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', rotacao=0, deslocamento=0.0)
                 img_pz = plot_polos_zeros(FT)
 
+                # Tabela de Routh (denominador da FT de malha aberta)
                 den_coefs = flatten_and_convert(FT.den[0])
                 routh_table = tabela_routh(den_coefs)
 
@@ -517,16 +603,18 @@ def simulador():
                     'Kp': Kp,
                     'Ki': Ki,
                     'Kd': Kd,
-                    'img_resposta_aberta': 'resposta_malha_aberta.png', # Caminho fixo
-                    'img_resposta_fechada': 'resposta_malha_fechada.png', # Caminho fixo
-                    'img_pz': 'polos_zeros.png', # Caminho fixo
+                    'img_resposta_aberta': img_resposta_aberta if img_resposta_aberta else '', # Garante que não é None
+                    'img_resposta_fechada': img_resposta_fechada if img_resposta_fechada else '', # Garante que não é None
+                    'img_pz': img_pz if img_pz else '', # Garante que não é None
                     'routh_table': routh_table.tolist()
                 }
 
             except ValueError as ve:
                 error = f"Erro de validação ou cálculo: {str(ve)}"
+                flash(error, 'danger')
             except Exception as e:
-                error = f"Erro inesperado no processamento: {str(e)}"
+                error = f"Um erro inesperado ocorreu durante o processamento: {str(e)}. Por favor, tente novamente ou verifique a EDO."
+                flash(error, 'danger')
     
     return render_template('simulador.html', resultado=resultado, error=error, admin=is_admin)
 
@@ -537,14 +625,17 @@ def perfil():
         return redirect(url_for('login'))
 
     email = session['usuario_logado']
+    usuarios = {}
     if os.path.exists('usuarios.json'):
-        with open('usuarios.json', 'r') as f:
-            usuarios = json.load(f)
-    else:
-        usuarios = {}
+        try:
+            with open('usuarios.json', 'r') as f:
+                usuarios = json.load(f)
+        except json.JSONDecodeError:
+            flash("Erro ao carregar dados de usuários. Arquivo 'usuarios.json' pode estar corrompido.", 'danger')
+            usuarios = {}
 
     usuario = usuarios.get(email)
-    is_admin = session.get('is_admin', False) # Passa admin status
+    is_admin = session.get('is_admin', False)
     return render_template('perfil.html', usuario=usuario, email=email, admin=is_admin)
 
 @app.route('/alterar_senha', methods=['GET', 'POST'])
@@ -559,16 +650,21 @@ def alterar_senha():
         confirmar_senha = request.form.get('confirmar_senha')
 
         email = session['usuario_logado']
+        usuarios = {}
         if os.path.exists('usuarios.json'):
-            with open('usuarios.json', 'r') as f:
-                usuarios = json.load(f)
-        else:
-            usuarios = {}
+            try:
+                with open('usuarios.json', 'r') as f:
+                    usuarios = json.load(f)
+            except json.JSONDecodeError:
+                flash("Erro ao carregar dados de usuários. Arquivo 'usuarios.json' pode estar corrompido.", 'danger')
+                usuarios = {}
 
         if email not in usuarios:
-            flash('Usuário não encontrado.', 'danger')
+            flash('Usuário não encontrado. Por favor, tente novamente.', 'danger')
             return redirect(url_for('alterar_senha'))
 
+        # AVISO DE SEGURANÇA CRÍTICO: Compara senhas em texto plano.
+        # Se você usar hashing para armazenar senhas, precisará usar a função de verificação de hash aqui.
         if usuarios[email]['senha'] != senha_atual:
             flash('Senha atual incorreta.', 'danger')
             return redirect(url_for('alterar_senha'))
@@ -576,30 +672,39 @@ def alterar_senha():
         if nova_senha != confirmar_senha:
             flash('Nova senha e confirmação não conferem.', 'danger')
             return redirect(url_for('alterar_senha'))
-        
+            
         if not nova_senha:
             flash('A nova senha não pode ser vazia.', 'danger')
             return redirect(url_for('alterar_senha'))
 
+        # AVISO DE SEGURANÇA CRÍTICO: Senha nova será salva em texto plano.
+        # Use hashing para armazenar senhas.
         usuarios[email]['senha'] = nova_senha
-        with open('usuarios.json', 'w') as f:
-            json.dump(usuarios, f, indent=4)
+        try:
+            with open('usuarios.json', 'w') as f:
+                json.dump(usuarios, f, indent=4)
+            flash('Senha alterada com sucesso!', 'success')
+            return redirect(url_for('perfil'))
+        except IOError as e:
+            flash(f"Erro ao salvar a nova senha: {e}.", 'danger')
+            return redirect(url_for('alterar_senha'))
 
-        flash('Senha alterada com sucesso!', 'success')
-        return redirect(url_for('perfil'))
-
-    is_admin = session.get('is_admin', False) # Passa admin status
+    is_admin = session.get('is_admin', False)
     return render_template('alterar_senha.html', admin=is_admin)
 
 @app.route('/funcao_transferencia')
 def funcao_transferencia():
-    ft_latex = session.get('ft_latex')
-    if not ft_latex:
-        ft_latex = "Função de Transferência não disponível."
-    is_admin = session.get('is_admin', False) # Passa admin status
+    # Esta rota não está salvando 'ft_latex' na sessão.
+    # Se você quiser exibir a última FT calculada, precisaria salvá-la no 'resultado' do simulador
+    # e passá-la para a sessão ou recuperá-la de outra forma.
+    flash("Esta página atualmente não exibe a última Função de Transferência calculada. Use o simulador.", 'info')
+    ft_latex = "Função de Transferência não disponível ou não calculada recentemente."
+    is_admin = session.get('is_admin', False)
     return render_template('transferencia.html', ft_latex=ft_latex, admin=is_admin)
 
 # === EXECUÇÃO PRINCIPAL ===
 if __name__ == '__main__':
+    # Certifica que o diretório 'static' existe para salvar os gráficos
+    os.makedirs('static', exist_ok=True)
     port = int(os.environ.get('PORT', 5050))
     app.run(host='0.0.0.0', port=port, debug=False)
