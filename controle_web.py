@@ -28,6 +28,7 @@ def flatten_and_convert(lst):
             try:
                 result.append(float(c))
             except TypeError:
+                # Captura erro se o símbolo não puder ser avaliado para float
                 raise ValueError(f"Coeficiente simbólico '{c}' não pode ser avaliado para um valor numérico. Por favor, forneça valores numéricos para todos os símbolos para gerar gráficos e sintonias.")
             except Exception as e:
                 raise Exception(f"Erro convertendo coeficiente: {c} ({e})")
@@ -52,74 +53,108 @@ def parse_edo(edo_str, entrada_str, saida_str):
     Permite variáveis de entrada e saída flexíveis e lida com coeficientes simbólicos.
     """
     t = sp.symbols('t', real=True)
-    
+    s = sp.symbols('s') # Garante que 's' está no escopo para este parse
+
     # Cria funções simbólicas para entrada e saída dinamicamente
-    X = sp.Function(saida_str)(t)
-    F = sp.Function(entrada_str)(t)
-
-    # Dicionário local para sympify, incluindo as novas funções X e F
-    local_dict = {
-        'sp': sp, 't': t,
-        saida_str: X, entrada_str: F,
-    }
-    
-    # Adiciona as derivadas de X e F ao local_dict para reconhecimento pelo sympify
-    for i in range(1, 5): # Suporta até a 4ª derivada
-        local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(X, t, i)
-        local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F, t, i)
-    local_dict[f'diff({saida_str},t)'] = sp.Derivative(X, t, 1) # Para diff(y,t)
-    local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1) # Para diff(u,t)
-
-
-    # Prepara a string da EDO para sympify
-    eq_str = edo_str.replace('diff', 'sp.Derivative')
-    if '=' in eq_str:
-        lhs, rhs = eq_str.split('=')
-        eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
-
-    # Converte a string da EDO para uma expressão simbólica do SymPy
-    try:
-        eq = sp.sympify(eq_str, locals=local_dict)
-    except Exception as e:
-        raise ValueError(f"Erro ao interpretar a EDO. Verifique a sintaxe. Detalhes: {e}")
+    X_t = sp.Function(saida_str)(t)
+    F_t = sp.Function(entrada_str)(t)
 
     # Símbolos da transformada de Laplace para a saída (Xs) e entrada (Fs)
     Xs = sp.symbols(f'{saida_str}s')
     Fs = sp.symbols(f'{entrada_str}s')
-    
-    expr_laplace = eq
-    
-    # Substitui as funções do tempo e suas derivadas por suas transformadas de Laplace
-    # As condições iniciais são assumidas como zero para obtenção da Função de Transferência.
-    for d in expr_laplace.atoms(sp.Derivative):
-        ordem = d.derivative_count
-        func = d.expr
-        if func == X:
-            expr_laplace = expr_laplace.subs(d, s**ordem * Xs)
-        elif func == F:
-            expr_laplace = expr_laplace.subs(d, s**ordem * Fs)
-    
-    # Substitui as funções originais (não derivadas) por suas transformadas de Laplace
-    expr_laplace = expr_laplace.subs({X: Xs, F: Fs})
 
+    # Dicionário para subs de sympify (para variáveis no tempo)
+    local_dict_time = {
+        'sp': sp, 't': t,
+        saida_str: X_t, entrada_str: F_t,
+    }
+    # Adiciona as derivadas ao local_dict_time
+    for i in range(1, 5): # Suporta até a 4ª derivada
+        local_dict_time[f'diff({saida_str},t,{i})'] = sp.Derivative(X_t, t, i)
+        local_dict_time[f'diff({entrada_str},t,{i})'] = sp.Derivative(F_t, t, i)
+    local_dict_time[f'diff({saida_str},t)'] = sp.Derivative(X_t, t, 1)
+    local_dict_time[f'diff({entrada_str},t)'] = sp.Derivative(F_t, t, 1)
+
+    # Preparar a string da EDO e converter para expressão SymPy
+    eq_str_processed = edo_str.replace('diff', 'sp.Derivative')
+    if '=' in eq_str_processed:
+        lhs, rhs = eq_str_processed.split('=')
+        eq_str_processed = f"({lhs.strip()}) - ({rhs.strip()})"
+    
+    try:
+        # Tenta sympify usando o local_dict para reconhecer as variáveis de tempo e suas derivadas
+        eq = sp.sympify(eq_str_processed, locals=local_dict_time)
+    except Exception as e:
+        raise ValueError(f"Erro ao interpretar a EDO. Verifique a sintaxe. Detalhes: {e}")
+
+    # Mapeamento de funções do tempo para suas transformadas de Laplace
+    laplace_subs_map = {}
+    for atom in eq.atoms():
+        if isinstance(atom, sp.Function):
+            if atom == X_t:
+                laplace_subs_map[atom] = Xs
+            elif atom == F_t:
+                laplace_subs_map[atom] = Fs
+        elif isinstance(atom, sp.Derivative):
+            func = atom.expr
+            order = atom.derivative_count
+            if func == X_t:
+                laplace_subs_map[atom] = s**order * Xs # Assumindo CI zero
+            elif func == F_t:
+                laplace_subs_map[atom] = s**order * Fs # Assumindo CI zero
+    
+    # Aplica as substituições para obter a equação no domínio de Laplace
+    expr_laplace = eq.subs(laplace_subs_map)
+    
     # Isola Xs/Fs para obter a Função de Transferência
     try:
-        coef_Xs = expr_laplace.coeff(Xs)
-        resto = expr_laplace - coef_Xs * Xs
+        # Reorganiza a equação para (coef_Xs * Xs) - (resto) = 0
+        # O SymPy solve é mais robusto para isolar a variável desejada
+        solution_Xs = sp.solve(expr_laplace, Xs)
+        if not solution_Xs:
+            raise ValueError("Não foi possível resolver a EDO para a variável de saída no domínio de Laplace (Xs).")
         
-        solution_dict = sp.solve(expr_laplace, Xs)
-        if solution_dict:
-            solution = solution_dict[0]
-            Ls_expr = sp.simplify(solution.subs(Fs, 1))
+        # Pega a primeira solução e forma a FT, assumindo Fs=1 (entrada degrau unitário no domínio de Laplace)
+        # É crucial que Fs seja tratado como uma variável aqui, e não substituído muito cedo.
+        # A FT é G(s) = Xs/Fs, então Ls_expr = Xs / Fs quando Fs está no termo da entrada.
+        # Se a solução é Xs = H(s) * Fs, então a FT é H(s).
+        
+        # O SymPy solve muitas vezes retorna Xs em termos de Fs diretamente.
+        # Ex: Xs = (1/(s^2+3s+4))*Fs
+        # Precisamos isolar o termo que multiplica Fs
+        
+        # Se a solução for Xs = expr_com_Fs, fazemos expr_com_Fs / Fs para obter a FT
+        # Mas é mais limpo fazer o solve direto para Xs/Fs.
+        
+        # Uma forma mais robusta de isolar Xs/Fs é tratar toda a equação
+        # como uma relação e isolar a função de transferência.
+        # Rearranjar expr_laplace para a forma A(s)Xs = B(s)Fs
+        
+        # Coletar termos em Xs e Fs
+        poly_Xs = sp.Poly(expr_laplace, s, Xs)
+        poly_Fs = sp.Poly(expr_laplace, s, Fs)
+        
+        # Coeficiente de Xs
+        den_poly_sym = poly_Xs.coeff_dict().get(Xs, sp.S.Zero)
+        # Coeficiente de Fs (negativo porque estamos movendo Fs para o outro lado)
+        num_poly_sym = -poly_Fs.coeff_dict().get(Fs, sp.S.Zero)
+        
+        # Se a EDO não tiver termos em Fs, mas tiver uma constante,
+        # significa que a entrada F(t) não é modelada ou a EDO é homogênea.
+        # Para sistemas de controle, é esperado um termo de entrada.
+        if num_poly_sym == sp.S.Zero and Fs in expr_laplace.free_symbols:
+            # Isso pode acontecer se o termo Fs não for diretamente multiplicador
+            # Tenta um solve mais genérico
+            ratio_expr = sp.simplify(solution_Xs[0] / Fs)
+            Ls_expr = ratio_expr
+        elif num_poly_sym == sp.S.Zero:
+             raise ValueError("Não foi possível identificar um termo de entrada (Fs) na equação transformada. Verifique a EDO e a variável de entrada.")
         else:
-            if Fs not in resto.free_symbols:
-                raise ValueError("Não foi possível identificar a relação de entrada/saída na EDO. Verifique se a variável de entrada está presente.")
-            Ls_expr = -resto / coef_Xs
-            Ls_expr = sp.simplify(Ls_expr.subs(Fs, 1))
+            Ls_expr = sp.simplify(num_poly_sym / den_poly_sym)
+
     except Exception as e:
         raise ValueError(f"Não foi possível isolar a Função de Transferência. Verifique a EDO e as variáveis de entrada/saída. Erro: {e}")
 
-    # Extrai numerador e denominador da FT simbólica
     num, den = sp.fraction(Ls_expr)
     
     # Identifica quaisquer símbolos remanescentes (coeficientes simbólicos)
@@ -142,22 +177,32 @@ def parse_edo(edo_str, entrada_str, saida_str):
         den_coeffs = [float(c.evalf()) for c in sp.Poly(den_eval, s).all_coeffs()]
     except TypeError:
         raise ValueError("Não foi possível converter os coeficientes da Função de Transferência para valores numéricos. Certifique-se de que todos os coeficientes sejam numéricos após a análise da EDO.")
+    except Exception as e:
+        raise ValueError(f"Erro ao extrair coeficientes numéricos da FT: {e}. Certifique-se de que a FT resultante seja válida para conversão.")
+
 
     # Remove coeficientes zero iniciais
-    while len(den_coeffs) > 1 and den_coeffs[0] == 0:
-        den_coeffs.pop(0)
-        # Ajusta o numerador para manter a ordem correta
-        if num_coeffs and num_coeffs[0] == 0:
-            num_coeffs.pop(0)
-        else: # Se o numerador é mais curto, preenche com zeros à esquerda
-            num_coeffs = [0] * (len(den_coeffs) - len(num_coeffs)) + num_coeffs
+    # O Poly.all_coeffs() já lida com o termo de maior ordem, mas se o numerador
+    # e o denominador tiverem ordens diferentes e precisarem de pad_coeffs,
+    # ou se houver um polinômio zero, esta checagem é importante.
     
-    # Preenche os coeficientes para que tenham o mesmo comprimento
+    # Pad e verifica zero de novo, após a conversão para numéricos
     num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
     
     if not den_coeffs or all(c == 0 for c in den_coeffs):
-        raise ValueError("O denominador da função de transferência resultou em zero ou está vazio. Verifique a equação diferencial.")
+        raise ValueError("O denominador da função de transferência resultou em zero ou está vazio após a avaliação numérica. Verifique a equação diferencial.")
     
+    # Se o primeiro coeficiente do denominador ainda for zero, pode ser uma FT impropria.
+    # removemos zeros iniciais antes do control.TransferFunction para evitar erros de ordem.
+    # Ex: [0, 1, 2] -> [1, 2]
+    while len(den_coeffs) > 1 and abs(den_coeffs[0]) < 1e-9:
+        den_coeffs.pop(0)
+        num_coeffs.pop(0) # Ajusta o numerador junto
+    
+    if not den_coeffs: # Se o denominador ficou vazio após a limpeza
+        raise ValueError("O denominador da função de transferência é inválido após simplificação para a FT numérica.")
+
+
     # Cria a Função de Transferência usando a biblioteca control
     FT = control.TransferFunction(num_coeffs, den_coeffs)
     return Ls_expr, FT
@@ -171,7 +216,19 @@ def resposta_degrau(FT, tempo=None):
     if tempo is None:
         tempo = np.linspace(0, 10, 1000)
     try:
+        # Aumentar o tempo de simulação para sistemas instáveis ou lentos
+        if FT.poles() and np.any(np.real(FT.poles()) >= 0): # Se tiver polos no semi-plano direito ou no eixo imaginário
+            if tempo[-1] < 20: # Aumenta o tempo se a FT for instável e o tempo atual for curto
+                tempo = np.linspace(0, 20, 2000) # Simula por mais tempo
+        
         t, y = step(FT, T=tempo)
+        
+        # Verifica se a resposta explodiu (valores muito grandes)
+        if np.any(np.abs(y) > 1e10): # Limite arbitrário para "explodiu"
+            flash("Aviso: A resposta ao degrau apresentou valores muito grandes, indicando um sistema instável. O gráfico pode ser difícil de interpretar.", 'warning')
+            # Pode-se opcionalmente truncar os valores para evitar que o gráfico fique inútil
+            y[np.abs(y) > 1e10] = np.sign(y[np.abs(y) > 1e10]) * 1e10
+
         return t, y
     except Exception as e:
         raise ValueError(f"Não foi possível calcular a resposta ao degrau. Pode ser devido a polos instáveis ou erro na função de transferência. Erro: {e}")
@@ -188,13 +245,15 @@ def estima_LT(t, y):
     y_final = y[-1]
     y_inicial = y[0]
 
-    if abs(y_final - y_inicial) < 1e-6: # Evita divisão por zero se a resposta não muda
+    # Se a resposta é essencialmente constante ou não varia, L e T são pequenos.
+    if abs(y_final - y_inicial) < 1e-6:
         return 0.01, 0.01
 
+    # Normaliza a resposta entre 0 e 1 (ou -1 e 0 se for decrescente)
     y_scaled = (y - y_inicial) / (y_final - y_inicial)
 
     try:
-        # Encontra o primeiro ponto onde a resposta começa a subir (acima de um pequeno limiar)
+        # L - Tempo em que a resposta atinge 1% da variação total
         indice_inicio = next(i for i, v in enumerate(y_scaled) if v > 0.01 or v < -0.01)
         L = t[indice_inicio]
     except StopIteration:
@@ -202,7 +261,7 @@ def estima_LT(t, y):
 
     y_63_target = 0.63
     try:
-        # Encontra o primeiro ponto onde a resposta atinge 63% do valor final
+        # T - Tempo em que a resposta atinge 63% da variação total, subtraído de L
         indice_63 = next(i for i, v in enumerate(y_scaled) if v >= y_63_target)
         T = t[indice_63] - L
     except StopIteration:
