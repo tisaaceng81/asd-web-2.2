@@ -59,9 +59,8 @@ def parse_edo(edo_str, entrada_str, saida_str):
     Xs = sp.symbols(f'{saida_str}s')
     Fs = sp.symbols(f'{entrada_str}s')
 
-    # Cria um dicionário local para o sp.sympify, usando funções genéricas
-    # Isso é para garantir que o SymPy crie os objetos Function e Derivative corretamente
-    # e que possamos identificá-los depois.
+    # Cria um dicionário local para o sp.sympify, usando funções genéricas para o parsing
+    # O SymPy criará instâncias específicas dessas funções ao interpretar a string da EDO.
     _local_sympify_map = {
         'sp': sp, 't': t,
         saida_str: sp.Function(saida_str)(t), # Função de saída no tempo
@@ -81,7 +80,8 @@ def parse_edo(edo_str, entrada_str, saida_str):
         eq_str_processed = f"({lhs.strip()}) - ({rhs.strip()})"
     
     try:
-        # Sympify a EDO usando o mapa local. `eq_sym` conterá os objetos SymPy `Function` e `Derivative`
+        # Sympify a EDO. `eq_sym` conterá os objetos SymPy `Function` e `Derivative`
+        # que o SymPy criou a partir da string.
         eq_sym = sp.sympify(eq_str_processed, locals=_local_sympify_map)
     except Exception as e:
         raise ValueError(f"Erro ao interpretar a EDO. Verifique a sintaxe. Detalhes: {e}")
@@ -90,26 +90,24 @@ def parse_edo(edo_str, entrada_str, saida_str):
     laplace_subs_map = {}
     
     # Percorre todos os átomos (partes elementares) da expressão `eq_sym`
-    # para encontrar as instâncias EXATAS de Function e Derivative que SymPy criou.
+    # para encontrar as instâncias EXATAS de Function e Derivative que SymPy criou
+    # e mapeá-las para suas transformadas de Laplace.
     for atom in eq_sym.atoms():
         if isinstance(atom, sp.Function):
-            # Se for a função de saída (no tempo)
+            # Compara a função pelo nome e se o argumento é 't'
             if str(atom.func) == saida_str and atom.args == (t,):
                 laplace_subs_map[atom] = Xs
-            # Se for a função de entrada (no tempo)
             elif str(atom.func) == entrada_str and atom.args == (t,):
                 laplace_subs_map[atom] = Fs
         
         elif isinstance(atom, sp.Derivative):
-            # Se for uma derivada de uma função
-            func_expr = atom.expr # A função que está sendo derivada (e.g., x(t))
+            # Compara a função que está sendo derivada pelo nome e se o argumento é 't'
+            func_expr = atom.expr 
             order = atom.derivative_count
             
             if isinstance(func_expr, sp.Function) and func_expr.args == (t,):
-                # Se for derivada da função de saída
                 if str(func_expr.func) == saida_str:
                     laplace_subs_map[atom] = s**order * Xs
-                # Se for derivada da função de entrada
                 elif str(func_expr.func) == entrada_str:
                     laplace_subs_map[atom] = s**order * Fs
     
@@ -121,7 +119,8 @@ def parse_edo(edo_str, entrada_str, saida_str):
     for atom in expr_laplace.atoms():
         if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
            (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
-            raise ValueError(f"Erro: A equação transformada para Laplace ainda contém termos no domínio do tempo como '{atom}'. Isso indica um problema na transformação. Verifique a EDO e as variáveis de entrada/saída.")
+            # Se chegarmos aqui, a substituição falhou para algum termo.
+            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo: '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas. Isso pode indicar uma incompatibilidade na sintaxe ou nos nomes das variáveis.")
 
     try:
         # A equação transformada para Laplace está na forma: Coeficiente_de_Xs * Xs + Coeficiente_de_Fs * Fs + Termo_Constante = 0
@@ -141,8 +140,8 @@ def parse_edo(edo_str, entrada_str, saida_str):
         if den_poly_sym == 0:
              raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada (ex: a saída não depende de si mesma ou a EDO é apenas uma constante).")
         
-        if num_poly_sym_raw == 0 and Fs not in expr_laplace.free_symbols: # Se não há Fs e o coeficiente é zero
-            raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. Verifique a EDO e a variável de entrada. (Ex: F não está presente na EDO).")
+        if num_poly_sym_raw == 0 and Fs not in expr_laplace.free_symbols: # Se não há Fs na expressão transformada
+            raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. Verifique a EDO e a variável de entrada. (Ex: F não está presente na EDO ou tem coeficiente zero).")
 
         # A Função de Transferência G(s) = Xs/Fs.
         # Se a equação é (den_poly_sym)*Xs + (num_poly_sym_raw)*Fs = 0,
