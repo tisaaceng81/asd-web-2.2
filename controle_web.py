@@ -44,10 +44,6 @@ def pad_coeffs(num_coeffs, den_coeffs):
     return num_coeffs, den_coeffs
 
 def parse_edo(edo_str, entrada_str, saida_str):
-    """
-    Analisa uma Equação Diferencial Ordinária (EDO) para obter sua Função de Transferência.
-    Permite variáveis de entrada e saída flexíveis e lida com coeficientes simbólicos.
-    """
     t = sp.symbols('t', real=True)
     # Criar funções simbólicas para entrada e saída dinamicamente
     x = sp.Function(saida_str)(t)
@@ -178,21 +174,21 @@ def resposta_degrau(FT, tempo=None):
     """
     if tempo is None:
         tempo = np.linspace(0, 10, 1000)
-    try:
+    try: # Início do try block
         # Aumentar o tempo de simulação para sistemas instáveis ou lentos (melhoria mantida)
         if FT.poles() is not None and np.any(np.real(FT.poles()) >= 0):
             if tempo[-1] < 20:
                 tempo = np.linspace(0, 20, 2000)
         
-        t, y = step(FT, T=tempo)
+        t, y = step(FT, T=tempo) # Linha que pode levantar exceção
         
         # Verifica se a resposta explodiu (melhoria mantida)
         if np.any(np.abs(y) > 1e10):
             flash("Aviso: A resposta ao degrau apresentou valores muito grandes, indicando um sistema instável. O gráfico pode ser difícil de interpretar.", 'warning')
             y[np.abs(y) > 1e10] = np.sign(y[np.abs(y) > 1e10]) * 1e10
 
-        return t, y
-    except Exception as e:
+        return t, y # Retorno agora dentro do try block
+    except Exception as e: # Fim do try block, início do except
         raise ValueError(f"Não foi possível calcular a resposta ao degrau. Pode ser devido a polos instáveis ou erro na função de transferência. Erro: {e}")
 
 def estima_LT(t, y):
