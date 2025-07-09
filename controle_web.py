@@ -55,75 +55,84 @@ def parse_edo(edo_str, entrada_str, saida_str):
     t = sp.symbols('t', real=True)
     s = sp.symbols('s') # Garante que 's' está no escopo para este parse
 
-    # Cria funções simbólicas para entrada e saída dinamicamente
-    X_t = sp.Function(saida_str)(t)
-    F_t = sp.Function(entrada_str)(t)
-
-    # Símbolos da transformada de Laplace para a saída (Xs) e entrada (Fs)
+    # Define os símbolos Laplace (Xs, Fs)
     Xs = sp.symbols(f'{saida_str}s')
     Fs = sp.symbols(f'{entrada_str}s')
 
-    # Dicionário para subs de sympify (para variáveis no tempo)
-    local_dict_time = {
+    # Cria um dicionário local para o sp.sympify, usando funções genéricas
+    # Isso é para garantir que o SymPy crie os objetos Function e Derivative corretamente
+    # e que possamos identificá-los depois.
+    _local_sympify_map = {
         'sp': sp, 't': t,
-        saida_str: X_t, entrada_str: F_t,
+        saida_str: sp.Function(saida_str)(t), # Função de saída no tempo
+        entrada_str: sp.Function(entrada_str)(t), # Função de entrada no tempo
     }
-    # Adiciona as derivadas ao local_dict_time
-    for i in range(1, 5): # Suporta até a 4ª derivada
-        local_dict_time[f'diff({saida_str},t,{i})'] = sp.Derivative(X_t, t, i)
-        local_dict_time[f'diff({entrada_str},t,{i})'] = sp.Derivative(F_t, t, i)
-    local_dict_time[f'diff({saida_str},t)'] = sp.Derivative(X_t, t, 1)
-    local_dict_time[f'diff({entrada_str},t)'] = sp.Derivative(F_t, t, 1)
+    # Mapeia as derivadas para sp.Derivative no local_dict para parsing
+    for i in range(1, 5):
+        _local_sympify_map[f'diff({saida_str},t,{i})'] = sp.Derivative(sp.Function(saida_str)(t), t, i)
+        _local_sympify_map[f'diff({entrada_str},t,{i})'] = sp.Derivative(sp.Function(entrada_str)(t), t, i)
+    _local_sympify_map[f'diff({saida_str},t)'] = sp.Derivative(sp.Function(saida_str)(t), t, 1)
+    _local_sympify_map[f'diff({entrada_str},t)'] = sp.Derivative(sp.Function(entrada_str)(t), t, 1)
 
-    # Preparar a string da EDO e converter para expressão SymPy
+    # Processa a string da EDO (igualando a zero)
     eq_str_processed = edo_str.replace('diff', 'sp.Derivative')
     if '=' in eq_str_processed:
         lhs, rhs = eq_str_processed.split('=')
         eq_str_processed = f"({lhs.strip()}) - ({rhs.strip()})"
     
     try:
-        # Tenta sympify usando o local_dict para reconhecer as variáveis de tempo e suas derivadas
-        eq = sp.sympify(eq_str_processed, locals=local_dict_time)
+        # Sympify a EDO usando o mapa local. `eq_sym` conterá os objetos SymPy `Function` e `Derivative`
+        eq_sym = sp.sympify(eq_str_processed, locals=_local_sympify_map)
     except Exception as e:
         raise ValueError(f"Erro ao interpretar a EDO. Verifique a sintaxe. Detalhes: {e}")
 
-    # Mapeamento de funções do tempo para suas transformadas de Laplace
+    # --- Construção do Mapa de Substituição para Laplace ---
     laplace_subs_map = {}
-    for atom in eq.atoms():
+    
+    # Percorre todos os átomos (partes elementares) da expressão `eq_sym`
+    # para encontrar as instâncias EXATAS de Function e Derivative que SymPy criou.
+    for atom in eq_sym.atoms():
         if isinstance(atom, sp.Function):
-            if atom == X_t:
+            # Se for a função de saída (no tempo)
+            if str(atom.func) == saida_str and atom.args == (t,):
                 laplace_subs_map[atom] = Xs
-            elif atom == F_t:
+            # Se for a função de entrada (no tempo)
+            elif str(atom.func) == entrada_str and atom.args == (t,):
                 laplace_subs_map[atom] = Fs
+        
         elif isinstance(atom, sp.Derivative):
-            func = atom.expr
+            # Se for uma derivada de uma função
+            func_expr = atom.expr # A função que está sendo derivada (e.g., x(t))
             order = atom.derivative_count
-            if func == X_t:
-                laplace_subs_map[atom] = s**order * Xs # Assumindo CI zero
-            elif func == F_t:
-                laplace_subs_map[atom] = s**order * Fs # Assumindo CI zero
+            
+            if isinstance(func_expr, sp.Function) and func_expr.args == (t,):
+                # Se for derivada da função de saída
+                if str(func_expr.func) == saida_str:
+                    laplace_subs_map[atom] = s**order * Xs
+                # Se for derivada da função de entrada
+                elif str(func_expr.func) == entrada_str:
+                    laplace_subs_map[atom] = s**order * Fs
     
     # Aplica as substituições para obter a equação no domínio de Laplace
-    expr_laplace = eq.subs(laplace_subs_map)
-    
-    # --- TRECHO CRÍTICO PARA ISOLAR FT MAIS ROBUSTAMENTE ---
+    expr_laplace = eq_sym.subs(laplace_subs_map)
+
+    # --- Verificação de Substituição e Isolamento da FT ---
+    # Verifica se restaram termos no domínio do tempo após a substituição
+    for atom in expr_laplace.atoms():
+        if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
+           (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
+            raise ValueError(f"Erro: A equação transformada para Laplace ainda contém termos no domínio do tempo como '{atom}'. Isso indica um problema na transformação. Verifique a EDO e as variáveis de entrada/saída.")
+
     try:
         # A equação transformada para Laplace está na forma: Coeficiente_de_Xs * Xs + Coeficiente_de_Fs * Fs + Termo_Constante = 0
-        # Para um sistema linear, o Termo_Constante deve ser zero para a FT.
         
         # Coeficiente do termo de saída Xs (será o denominador da FT)
-        # Usamos .as_expr().coeff() para extrair o coeficiente de uma expressão que pode ser um Poly
-        den_poly_sym = expr_laplace.coeff(Xs) # Coeficiente de Xs
+        den_poly_sym = expr_laplace.coeff(Xs) 
         
-        # Coeficiente do termo de entrada Fs (será o numerador da FT)
-        # O restante da expressão após remover o termo de Xs deve ser o termo de Fs e talvez uma constante.
-        # Queremos o termo que multiplica Fs no lado da entrada.
-        # A expressão é zero. Então A*Xs + B*Fs = 0. A FT é Xs/Fs = -B/A.
-        # Portanto, o numerador é - (coeficiente de Fs).
-        num_poly_sym_raw = expr_laplace.coeff(Fs) # Coeficiente de Fs
+        # Coeficiente do termo de entrada Fs (será o numerador da FT, depois de mover para o outro lado)
+        num_poly_sym_raw = expr_laplace.coeff(Fs) 
         
         # Verifica se há termos constantes ou não lineares remanescentes (devem ser zero para uma FT válida)
-        # Remove os termos de Xs e Fs para ver o que sobra
         constant_term = expr_laplace - den_poly_sym * Xs - num_poly_sym_raw * Fs
         
         if constant_term != 0:
