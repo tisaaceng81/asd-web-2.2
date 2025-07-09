@@ -119,8 +119,8 @@ def parse_edo(edo_str, entrada_str, saida_str):
     for atom in expr_laplace.atoms():
         if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
            (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
-            # Se chegarmos aqui, a substituição falhou para algum termo.
-            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo: '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas. Isso pode indicar uma incompatibilidade na sintaxe ou nos nomes das variáveis.")
+            # Se chegarmos aqui, a substituição falhou.
+            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas. Isso pode indicar uma incompatibilidade na sintaxe ou nos nomes das variáveis.")
 
     try:
         # A equação transformada para Laplace está na forma: Coeficiente_de_Xs * Xs + Coeficiente_de_Fs * Fs + Termo_Constante = 0
