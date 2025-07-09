@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alterar Senha - Analisador de Sistemas Dinâmicos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        /* Estilos da barra de navegação (navbar) */
+        .navbar {
+            background-color: #333;
+            overflow: hidden;
+            width: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1000;
+            border-radius: 0;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            padding: 0 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .navbar a {
+            display: block;
+            color: #f2f2f2;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        .navbar a:hover {
+            background-color: #ddd;
+            color: black;
+        }
+        .navbar a.right {
+            margin-left: auto;
+        }
+        /* Container principal para centralizar conteúdo */
+        .form-wrapper {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 70px; /* Espaço para a navbar fixa */
+            padding-bottom: 20px;
+        }
+        .password-container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            width: 350px;
+            text-align: center;
+        }
+        h2 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+            text-align: left; /* Alinha o texto da label à esquerda */
+        }
+        input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        /* Estilos para mensagens flash */
+        .messages {
+            list-style-type: none;
+            padding: 0;
+            text-align: center;
+            margin-bottom: 20px;
+            margin-top: 70px; /* Para aparecer abaixo da navbar fixa */
+        }
+        .messages li {
+            padding: 10px;
+            margin-bottom: 5px;
+            border-radius: 5px;
+            font-weight: bold;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            max-width: 800px;
+        }
+        .messages .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .messages .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .messages .danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .messages .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('login') }}">Login</a>
+        <a href="{{ url_for('cadastro') }}">Cadastro</a>
+        {% if admin %} <a href="{{ url_for('admin') }}">Admin</a>
+        {% endif %}
+        {% if session.get('usuario_logado') %} <a href="{{ url_for('painel') }}">Painel</a>
+            <a href="{{ url_for('perfil') }}">Perfil</a>
+            <a href="{{ url_for('logout') }}" class="right">Sair</a>
+        {% endif %}
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="messages">
+        {% for category, message in messages %}
+          <li class="{{ category }}">{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <div class="form-wrapper">
+        <div class="password-container">
+            <h2>Alterar Senha</h2>
+            <form method="POST" action="{{ url_for('alterar_senha') }}">
+                <label for="senha_atual">Senha Atual:</label>
+                <input type="password" id="senha_atual" name="senha_atual" required>
+
+                <label for="nova_senha">Nova Senha:</label>
+                <input type="password" id="nova_senha" name="nova_senha" required>
+
+                <label for="confirmar_senha">Confirmar Nova Senha:</label>
+                <input type="password" id="confirmar_senha" name="confirmar_senha" required>
+
+                <button type="submit">Alterar Senha</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
