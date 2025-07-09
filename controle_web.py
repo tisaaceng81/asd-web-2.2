@@ -50,19 +50,14 @@ def parse_edo(edo_str, entrada_str, saida_str):
         eq_str_processed = f"({lhs.strip()}) - ({rhs.strip()})"
 
     # local_dict precisa incluir as funções simbólicas criadas
+    # --- AJUSTE AQUI: Removendo entradas potencialmente ambíguas do local_dict ---
     local_dict = {
         'sp': sp, 't': t,
-        entrada_str: F, saida_str: x,
-        # Adiciona também as strings das funções para sympify reconhecer
-        str(F): F, str(x): x
+        entrada_str: F, # Ex: 'F': F(t)
+        saida_str: x    # Ex: 'x': x(t)
     }
-    
-    # Adicionar as derivadas ao local_dict para que sympify as reconheça corretamente
-    for i in range(1, 5): # Suporta até a 4ª derivada
-        local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(x, t, i)
-        local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F, t, i)
-    local_dict[f'diff({saida_str},t)'] = sp.Derivative(x, t, 1)
-    local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1)
+    # As entradas como 'str(F): F' e 'f"diff(...)"' foram removidas para evitar ambiguidades.
+    # O sympify deve ser capaz de resolver 'sp.Derivative(x,t,2)' se 'x' já estiver mapeado para x(t).
 
     try:
         eq = sp.sympify(eq_str_processed, locals=local_dict)
@@ -106,7 +101,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
         
         if coef_Xs == 0:
             if Xs not in expr_laplace.free_symbols:
-                # Caso 1: A variável de saída (X) não foi encontrada na EDO após a transformação.
+                # Caso 1: A variável de saída (X) não foi encontrada na EDO transformada
                 raise ValueError(f"A variável de saída '{saida_str}' (transformada em '{Xs}') não foi encontrada na equação após a transformação de Laplace. Verifique se a EDO realmente depende da variável de saída fornecida ou se a sintaxe está correta (ex: 'x' em vez de 'X').")
             else:
                 # Caso 2: Os termos da variável de saída (X) se cancelaram ou somaram a zero.
