@@ -9,19 +9,15 @@ from control.matlab import step
 from sympy.abc import s
 
 app = Flask(__name__)
-app.secret_key = 'sua_chave_secreta' # Mantenha esta chave secreta e única em produção
+app.secret_key = 'sua_chave_secreta_MUITO_SECRETA_E_ALEATORIA_PRODUCAO' # Mantenha esta chave secreta e única em produção
 
 # === FUNÇÕES AUXILIARES ===
 
 def flatten_and_convert(lst):
-    """
-    Achata uma lista e tenta converter seus elementos para float.
-    Levanta um erro se um elemento simbólico não puder ser avaliado.
-    """
+    # SUA FUNÇÃO ORIGINAL
     result = []
     for c in lst:
-        # Usar isinstance para Numpy arrays e outras iteráveis para maior robustez
-        if isinstance(c, (list, tuple, np.ndarray)) or (hasattr(c, '__iter__') and not isinstance(c, (str, bytes))):
+        if hasattr(c, '__iter__') and not isinstance(c, (str, bytes)):
             result.extend(flatten_and_convert(c))
         else:
             try:
@@ -31,10 +27,7 @@ def flatten_and_convert(lst):
     return result
 
 def pad_coeffs(num_coeffs, den_coeffs):
-    """
-    Preenche os coeficientes do numerador e denominador com zeros
-    para que tenham o mesmo comprimento para a função de transferência.
-    """
+    # SUA FUNÇÃO ORIGINAL
     len_num = len(num_coeffs)
     len_den = len(den_coeffs)
     if len_num < len_den:
@@ -44,184 +37,74 @@ def pad_coeffs(num_coeffs, den_coeffs):
     return num_coeffs, den_coeffs
 
 def parse_edo(edo_str, entrada_str, saida_str):
+    # SUA FUNÇÃO parse_edo ORIGINAL E FUNCIONAL
+    # Comentários de melhoria: Xs/Fs são hardcoded, só funciona bem para x e F como variáveis
     t = sp.symbols('t', real=True)
-    # Criar funções simbólicas para entrada e saída dinamicamente
-    x = sp.Function(saida_str)(t)
-    F = sp.Function(entrada_str)(t)
+    x = sp.Function(saida_str)(t) # Esta linha faz 'x' dinâmico, mas o resto depende de 'x' literal
+    F = sp.Function(entrada_str)(t) # Esta linha faz 'F' dinâmico, mas o resto depende de 'F' literal
 
     eq_str = edo_str.replace('diff', 'sp.Derivative')
     if '=' in eq_str:
         lhs, rhs = eq_str.split('=')
         eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
-    # local_dict: A CHAVE ESTÁ AQUI
-    # Mapeia os nomes das variáveis dinâmicas (saida_str, entrada_str) para seus objetos (x, F)
-    # E TAMBÉM mapeia as strings LITERAIS 'x' e 'F' para os mesmos objetos dinâmicos.
-    # Isso parece ajudar o SymPy a reconhecer e linkar os objetos corretamente no parsing.
     local_dict = {
         'sp': sp, 't': t,
-        saida_str: x, 
-        entrada_str: F,
-        'x': x, # EXATAMENTE como no seu código original
-        'F': F, # EXATAMENTE como no seu código original
-        str(x): x, # e suas representações string
-        str(F): F,
+        entrada_str: F, saida_str: x, # Mapeia as variáveis dinâmicas
+        'F': F, 'x': x, # Mantido do seu código original (e é crucial para ele funcionar com 'x' e 'F' literais)
+        str(F): F, str(x): x # Mantido
     }
-    
-    # Adicionar derivadas ao local_dict para sympify reconhecer
-    for i in range(1, 5): # Suporta até a 4ª derivada
-        local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(x, t, i)
-        local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F, t, i)
-    local_dict[f'diff({saida_str},t)'] = sp.Derivative(x, t, 1)
-    local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1)
-
 
     eq = sp.sympify(eq_str, locals=local_dict)
 
-    # Definir símbolos Laplace dinamicamente
-    Xs = sp.symbols(f'{saida_str}s')
-    Fs = sp.symbols(f'{entrada_str}s')
-
+    Xs, Fs = sp.symbols('Xs Fs') # HARDCODED - só funciona se a variável de saída for tratada como 'x' e a de entrada como 'F' para FT
     expr_laplace = eq
-    
-    # Lógica de substituição de Laplace do seu código original (agora mais robusta com objetos dinâmicos)
-    # Substituir derivadas
-    deriv_subs_map = {}
     for d in expr_laplace.atoms(sp.Derivative):
         ordem = d.derivative_count
         func = d.expr
-        # A comparação agora usa os objetos x e F dinâmicos criados no início
-        if func == x: 
+        if func == x: # Compara com o 'x' dinâmico
             expr_laplace = expr_laplace.subs(d, s**ordem * Xs)
-        elif func == F:
+        elif func == F: # Compara com o 'F' dinâmico
             expr_laplace = expr_laplace.subs(d, s**ordem * Fs)
 
-    # Substituir funções base
-    expr_laplace = expr_laplace.subs({x: Xs, F: Fs}) 
-
-    # Validação pós-substituição (melhoria mantida)
-    for atom in expr_laplace.atoms():
-        if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
-           (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
-            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas.")
-
-
-    # Lógica de isolamento da FT (do seu código original funcional, com validações adicionais)
-    try:
-        lhs = expr_laplace
-        coef_Xs = lhs.coeff(Xs) # AQUI é onde falhava antes
-
-        if coef_Xs == 0:
-            raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada.")
-        
-        resto = lhs - coef_Xs * Xs
-
-        if Fs not in resto.free_symbols and resto != 0:
-            raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes inesperados: {resto}. Verifique se a EDO é linear e homogênea (assumindo CI zero) e se a variável de entrada está presente e correta.")
-        
-        if resto == 0 and Fs not in expr_laplace.free_symbols:
-            raise ValueError("A EDO não possui uma variável de entrada (Fs). Não é possível formar uma função de transferência X(s)/F(s).")
-
-
-        Ls_expr = -resto / coef_Xs
-        Ls_expr = sp.simplify(Ls_expr.subs(Fs, 1)) # Assumir Fs=1 para a FT
-
-    except Exception as e:
-        raise ValueError(f"Não foi possível isolar a Função de Transferência. Verifique a EDO e as variáveis de entrada/saída. Erro: {e}")
+    expr_laplace = expr_laplace.subs({x: Xs, F: Fs}) # Substitui as funções base
+    lhs = expr_laplace
+    coef_Xs = lhs.coeff(Xs)
+    resto = lhs - coef_Xs * Xs
+    Ls_expr = -resto / coef_Xs
+    Ls_expr = sp.simplify(Ls_expr.subs(Fs, 1))
 
     num, den = sp.fraction(Ls_expr)
-    
-    # Tratamento de coeficientes simbólicos (melhoria mantida)
-    simbolos_num = list(num.free_symbols - {s})
-    simbolos_den = list(den.free_symbols - {s})
-    
-    if simbolos_num or simbolos_den:
-        subs_dict = {sym: 1.0 for sym in simbolos_num + simbolos_den}
-        num_eval = num.subs(subs_dict)
-        den_eval = den.subs(subs_dict)
-        flash(f"Aviso: Coeficientes simbólicos '{', '.join(map(str, simbolos_num + simbolos_den))}' foram detectados e substituídos por 1.0 para a geração dos gráficos e parâmetros PID. Para resultados exatos, forneça apenas coeficientes numéricos na EDO ou revise a sintaxe.", 'warning')
-    else:
-        num_eval = num
-        den_eval = den
-
-    num_coeffs = [float(c.evalf()) for c in sp.Poly(num_eval, s).all_coeffs()]
-    den_coeffs = [float(c.evalf()) for c in sp.Poly(den_eval, s).all_coeffs()]
-    
-    # Padding e limpeza de zeros iniciais (melhorias mantidas)
+    num_coeffs = [float(c.evalf()) for c in sp.Poly(num, s).all_coeffs()]
+    den_coeffs = [float(c.evalf()) for c in sp.Poly(den, s).all_coeffs()]
     num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
-    
-    if not den_coeffs or all(c == 0 for c in den_coeffs):
-        raise ValueError("O denominador da função de transferência resultou em zero ou está vazio após a avaliação numérica. Verifique a equação diferencial.")
-    
-    while len(den_coeffs) > 1 and abs(den_coeffs[0]) < 1e-9:
-        den_coeffs.pop(0)
-        if num_coeffs and len(num_coeffs) > 0 and abs(num_coeffs[0]) < 1e-9:
-            num_coeffs.pop(0)
-        else: # Se o numerador é menor, preenche com zeros à esquerda
-            num_coeffs = [0] * (len(den_coeffs) - len(num_coeffs)) + num_coeffs
 
     FT = control.TransferFunction(num_coeffs, den_coeffs)
     return Ls_expr, FT
 
 def ft_to_latex(expr):
+    # Sua função original
     return sp.latex(expr, mul_symbol='dot')
 
 def resposta_degrau(FT, tempo=None):
-    """
-    Calcula a resposta ao degrau de uma Função de Transferência.
-    Sua versão original, com melhorias de validação e aviso para sistemas instáveis.
-    """
+    # Sua função original
     if tempo is None:
         tempo = np.linspace(0, 10, 1000)
-    try: # Início do try block
-        # Aumentar o tempo de simulação para sistemas instáveis ou lentos (melhoria mantida)
-        if FT.poles() is not None and np.any(np.real(FT.poles()) >= 0):
-            if tempo[-1] < 20:
-                tempo = np.linspace(0, 20, 2000)
-        
-        t, y = step(FT, T=tempo) # Linha que pode levantar exceção
-        
-        # Verifica se a resposta explodiu (melhoria mantida)
-        if np.any(np.abs(y) > 1e10):
-            flash("Aviso: A resposta ao degrau apresentou valores muito grandes, indicando um sistema instável. O gráfico pode ser difícil de interpretar.", 'warning')
-            y[np.abs(y) > 1e10] = np.sign(y[np.abs(y) > 1e10]) * 1e10
-
-        return t, y # Retorno agora dentro do try block
-    except Exception as e: # Fim do try block, início do except
-        raise ValueError(f"Não foi possível calcular a resposta ao degrau. Pode ser devido a polos instáveis ou erro na função de transferência. Erro: {e}")
+    t, y = step(FT, T=tempo)
+    return t, y
 
 def estima_LT(t, y):
-    # Sua versão original da estima_LT com pequenas melhorias
-    y = np.array(y)
-    if np.isnan(y).any() or np.isinf(y).any():
-        raise ValueError("A resposta ao degrau contém valores inválidos (NaN/Inf), impossível estimar L e T.")
-    
+    # Sua função original
     y_final = y[-1]
-    y_inicial = y[0] # Incluído para calcular variação real
-
-    # Se a resposta final é essencialmente zero ou não variou significativamente
-    if abs(y_final - y_inicial) < 1e-6:
-        return 0.01, 0.01
-
-    # Normalizar a resposta em relação à variação total
-    y_scaled = (y - y_inicial) / (y_final - y_inicial)
-
-    try:
-        indice_inicio = next(i for i, v in enumerate(y_scaled) if v > 0.01 or v < -0.01)
-        L = t[indice_inicio]
-    except StopIteration:
-        L = 0.01
-    
-    y_63_target = 0.63
-    try:
-        indice_63 = next(i for i, v in enumerate(y_scaled) if v >= y_63_target)
-        T = t[indice_63] - L
-    except StopIteration:
-        T = 0.01
-    
-    return (L if L >= 0 else 0.01), (T if T >= 0 else 0.01) # Garante L e T positivos
+    indice_inicio = next(i for i, v in enumerate(y) if v > 0.01 * y_final)
+    L = t[indice_inicio]
+    y_63 = 0.63 * y_final
+    indice_63 = next(i for i, v in enumerate(y) if v >= y_63)
+    T = t[indice_63] - L
+    return (L if L >= 0 else 0.01), T
 
 def sintonia_ziegler_nichols(L, T):
+    # Sua função original
     Kp = 1.2 * T / L if L != 0 else 1.0
     Ti = 2 * L
     Td = 0.5 * L
@@ -230,89 +113,45 @@ def sintonia_ziegler_nichols(L, T):
     return Kp, Ki, Kd
 
 def cria_pid_tf(Kp, Ki, Kd):
+    # Sua função original
     s = control.TransferFunction.s
     return Kp + Ki / s + Kd * s
 
 def malha_fechada_tf(Gp, Gc):
+    # Sua função original
     return control.feedback(Gp * Gc, 1)
 
 def tabela_routh(coeficientes):
-    # Sua versão original, com melhorias de validação de coeficientes e zeros na primeira coluna
-    # A linha de conversão foi feita mais robusta para garantir floats.
-    try:
-        coeficientes = [float(c) for c in coeficientes]
-    except Exception as e:
-        raise ValueError(f"Erro ao processar coeficientes para a Tabela de Routh: {e}. Certifique-se de que a entrada é uma lista plana de números.")
-
+    # Sua função original
+    coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
     n = len(coeficientes)
-    
-    if n == 0 or all(c == 0 for c in coeficientes):
-        flash("Aviso: Coeficientes do denominador são todos zero ou vazios para a Tabela de Routh.", 'warning')
-        return np.array([[]])
-
-    # Remove zeros iniciais se houver (ex: 0s^2 + 2s + 1)
-    while n > 0 and abs(coeficientes[0]) < 1e-9:
-        coeficientes.pop(0)
-        n = len(coeficientes)
-    
-    if n == 0:
-        flash("Aviso: Todos os coeficientes do denominador se anularam após a remoção de zeros iniciais.", 'warning')
-        return np.array([[]])
-
-    if n == 1 and abs(coeficientes[0]) < 1e-9:
-        flash("Aviso: O único coeficiente do denominador restante é zero.", 'warning')
-        return np.array([[]])
-
     m = (n + 1) // 2
     routh = np.zeros((n, m))
-    
     routh[0, :len(coeficientes[::2])] = coeficientes[::2]
     if n > 1:
         routh[1, :len(coeficientes[1::2])] = coeficientes[1::2]
-    
     for i in range(2, n):
-        # Lida com o caso de zero ou quase zero na primeira coluna substituindo por um pequeno epsilon
-        if abs(routh[i - 1, 0]) < 1e-9:
-            routh[i - 1, 0] = 1e-9 # Usar um valor muito pequeno
-            flash(f"Aviso: Zero ou valor muito próximo de zero detectado na primeira coluna da linha {i-1} da Tabela de Routh. Substituindo por um pequeno valor (1e-9) para continuar o cálculo. Isso pode indicar polos no eixo imaginário ou problemas de estabilidade.", 'warning')
-
         for j in range(m - 1):
             a = routh[i - 2, 0]
-            b = routh[i - 1, 0]
+            b = routh[i - 1, 0] if routh[i - 1, 0] != 0 else 1e-6
             c = routh[i - 2, j + 1]
             d = routh[i - 1, j + 1]
-            
-            if abs(b) < 1e-9:
-                routh[i, j] = 0
-            else:
-                routh[i, j] = (b * c - a * d) / b
-                
+            routh[i, j] = (b * c - a * d) / b
     return routh
 
 def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
-    # Sua função original, com validações de dados e tratamento de caminho
-    y = np.array(y) # Converte para numpy array para operações
-    valid_indices = np.isfinite(t) & np.isfinite(y)
-    t = t[valid_indices]
-    y = y[valid_indices]
-
-    if len(t) == 0:
-        print(f"Aviso: Dados vazios ou inválidos para o gráfico '{nome}'. Não será gerado.")
-        return None
-
+    # Sua função original
     y = y + deslocamento
 
-    # A lógica de rotação para inversão é controlada aqui.
-    # Se rotacao=0 for passado (padrão), não haverá rotação/inversão.
     if rotacao == 180:
         t = -t[::-1]
         y = -y[::-1]
     elif rotacao == 90:
         t, y = -y, t
 
-    if t.size > 0 and min(t) < 0:
+    if min(t) < 0:
         t = t - min(t)
-    if y.size > 0 and min(y) < 0:
+    if min(y) < 0:
         y = y - min(y)
 
     plt.figure(figsize=(8, 4))
@@ -324,17 +163,12 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
     plt.legend()
     plt.tight_layout()
     caminho = os.path.join('static', f'{nome}.png')
-    try:
-        plt.savefig(caminho)
-    except Exception as e:
-        print(f"Erro ao salvar o gráfico '{nome}': {e}")
-        caminho = None
-    finally:
-        plt.close()
+    plt.savefig(caminho)
+    plt.close()
     return caminho
 
 def plot_polos_zeros(FT):
-    # Sua função original, com pequenas melhorias de validação e ajuste de limites
+    # Sua função original
     fig, ax = plt.subplots()
     ax.scatter(np.real(FT.poles()), np.imag(FT.poles()), marker='x', color='red', label='Polos')
     ax.scatter(np.real(FT.zeros()), np.imag(FT.zeros()), marker='o', color='blue', label='Zeros')
@@ -345,32 +179,9 @@ def plot_polos_zeros(FT):
     ax.set_title('Diagrama de Polos e Zeros')
     ax.legend()
     ax.grid(True)
-    
-    # Ajuste de limites para garantir que o gráfico seja sempre visível e não cortado
-    all_coords_real = np.concatenate((np.real(FT.poles()), np.real(FT.zeros())))
-    all_coords_imag = np.concatenate((np.imag(FT.poles()), np.imag(FT.zeros())))
-
-    if all_coords_real.size > 0 and all_coords_imag.size > 0:
-        min_re, max_re = all_coords_real.min(), all_coords_real.max()
-        min_im, max_im = all_coords_imag.min(), all_coords_imag.max()
-
-        margin_re = max(0.5, (max_re - min_re) * 0.1)
-        margin_im = max(0.5, (max_im - min_im) * 0.1)
-
-        ax.set_xlim(min_re - margin_re, max_re + margin_re)
-        ax.set_ylim(min_im - margin_im, max_im + margin_im)
-    else: # Mantenho seu 'else' original, mas o problema anterior era da cópia/cola.
-        ax.set_xlim(-2, 2) # Limites padrão se não houver polos/zeros finitos
-        ax.set_ylim(-2, 2)
-
     caminho = os.path.join('static', 'polos_zeros.png')
-    try:
-        plt.savefig(caminho)
-    except Exception as e:
-        print(f"Erro ao salvar o gráfico de Polos e Zeros: {e}")
-        caminho = None
-    finally:
-        plt.close()
+    plt.savefig(caminho)
+    plt.close()
     return caminho
 
 # === ROTAS ===
@@ -378,7 +189,7 @@ def plot_polos_zeros(FT):
 @app.route('/')
 def home():
     user_email = session.get('usuario_logado')
-    is_admin = session.get('is_admin', False) # Passa admin status
+    is_admin = session.get('is_admin', False) # Adicionado para controle Admin
     return render_template('index.html', user_email=user_email, admin=is_admin)
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -526,7 +337,6 @@ def simulador():
                 t_closed, y_closed = resposta_degrau(mf)
 
                 def tf_to_sympy_tf(tf_control_obj): # Renomeado para evitar conflito com 'tf' local
-                    # Garante que tf_control_obj.num[0][0] e tf_control_obj.den[0][0] são listas
                     num_list = tf_control_obj.num[0][0]
                     den_list = tf_control_obj.den[0][0]
 
