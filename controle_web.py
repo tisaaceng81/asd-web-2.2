@@ -20,7 +20,7 @@ def flatten_and_convert(lst):
     """
     result = []
     for c in lst:
-        # Corrigido para usar isinstance para Numpy arrays e outras iteráveis
+        # Usar isinstance para Numpy arrays e outras iteráveis para maior robustez
         if isinstance(c, (list, tuple, np.ndarray)) or (hasattr(c, '__iter__') and not isinstance(c, (str, bytes))):
             result.extend(flatten_and_convert(c))
         else:
@@ -90,7 +90,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     expr_laplace = expr_laplace.subs({x: Xs, F: Fs}) # Substituir funções base
 
-    # Validação pós-substituição (melhoria mantida)
+    # Validação pós-substituição (melhoria mantida da versão anterior)
     for atom in expr_laplace.atoms():
         if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
            (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
@@ -285,8 +285,8 @@ def tabela_routh(coeficientes):
     return routh
 
 def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
+    # Sua função original, com validações de dados e tratamento de caminho
     y = np.array(y) # Converte para numpy array para operações
-    # Validação de dados (mantida)
     valid_indices = np.isfinite(t) & np.isfinite(y)
     t = t[valid_indices]
     y = y[valid_indices]
