@@ -14,12 +14,9 @@ app.secret_key = 'sua_chave_secreta' # Mantenha esta chave secreta e única em p
 # === FUNÇÕES AUXILIARES ===
 
 def flatten_and_convert(lst):
-    """
-    Achata uma lista e tenta converter seus elementos para float.
-    Levanta um erro se um elemento simbólico não puder ser avaliado.
-    """
     result = []
     for c in lst:
+        # Usar isinstance para Numpy arrays e outras iteráveis para maior robustez
         if isinstance(c, (list, tuple, np.ndarray)) or (hasattr(c, '__iter__') and not isinstance(c, (str, bytes))):
             result.extend(flatten_and_convert(c))
         else:
@@ -30,10 +27,6 @@ def flatten_and_convert(lst):
     return result
 
 def pad_coeffs(num_coeffs, den_coeffs):
-    """
-    Preenche os coeficientes do numerador e denominador com zeros
-    para que tenham o mesmo comprimento para a função de transferência.
-    """
     len_num = len(num_coeffs)
     len_den = len(den_coeffs)
     if len_num < len_den:
@@ -43,118 +36,93 @@ def pad_coeffs(num_coeffs, den_coeffs):
     return num_coeffs, den_coeffs
 
 def parse_edo(edo_str, entrada_str, saida_str):
-    """
-    Analisa uma Equação Diferencial Ordinária (EDO) para obter sua Função de Transferência.
-    Permite variáveis de entrada e saída flexíveis e lida com coeficientes simbólicos.
-    """
     t = sp.symbols('t', real=True)
-    s = sp.symbols('s') # Garante que 's' está no escopo para este parse
+    # Criar funções simbólicas para entrada e saída dinamicamente
+    x = sp.Function(saida_str)(t)
+    F = sp.Function(entrada_str)(t)
 
-    # Define os símbolos Laplace (Xs, Fs)
+    eq_str = edo_str.replace('diff', 'sp.Derivative')
+    if '=' in eq_str:
+        lhs, rhs = eq_str.split('=')
+        eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
+
+    # Dicionário local para sympify: crucial para que SymPy reconheça as funções e suas derivadas
+    # A ordem e a inclusão de str(F)/str(x) do seu código original são mantidas.
+    local_dict = {
+        'sp': sp, 't': t,
+        entrada_str: F, saida_str: x,
+        'F': F, 'x': x, # Mantido do seu código original funcional para garantir o parsing
+        str(F): F, str(x): x # Mantido do seu código original funcional
+    }
+
+    # Adicionar derivadas ao local_dict para sympify reconhecer
+    for i in range(1, 5): # Suporta até a 4ª derivada
+        local_dict[f'diff({saida_str},t,{i})'] = sp.Derivative(x, t, i)
+        local_dict[f'diff({entrada_str},t,{i})'] = sp.Derivative(F, t, i)
+    local_dict[f'diff({saida_str},t)'] = sp.Derivative(x, t, 1)
+    local_dict[f'diff({entrada_str},t)'] = sp.Derivative(F, t, 1)
+
+
+    eq = sp.sympify(eq_str, locals=local_dict)
+
+    # Definir símbolos Laplace dinamicamente
     Xs = sp.symbols(f'{saida_str}s')
     Fs = sp.symbols(f'{entrada_str}s')
 
-    # Cria um dicionário local para o sp.sympify para interpretar a EDO
-    _local_sympify_map = {
-        'sp': sp, 't': t,
-        saida_str: sp.Function(saida_str)(t),
-        entrada_str: sp.Function(entrada_str)(t),
-    }
-    for i in range(1, 5): # Mapeia derivadas para sp.Derivative no parsing
-        _local_sympify_map[f'diff({saida_str},t,{i})'] = sp.Derivative(sp.Function(saida_str)(t), t, i)
-        _local_sympify_map[f'diff({entrada_str},t,{i})'] = sp.Derivative(sp.Function(entrada_str)(t), t, i)
-    _local_sympify_map[f'diff({saida_str},t)'] = sp.Derivative(sp.Function(saida_str)(t), t, 1)
-    _local_sympify_map[f'diff({entrada_str},t)'] = sp.Derivative(sp.Function(entrada_str)(t), t, 1)
-
-    # Processa a string da EDO (igualando a zero)
-    eq_str_processed = edo_str.replace('diff', 'sp.Derivative')
-    if '=' in eq_str_processed:
-        lhs, rhs = eq_str_processed.split('=')
-        eq_str_processed = f"({lhs.strip()}) - ({rhs.strip()})"
+    expr_laplace = eq
     
-    try:
-        # Sympify a EDO. `eq_sym` conterá os objetos SymPy `Function` e `Derivative`
-        eq_sym = sp.sympify(eq_str_processed, locals=_local_sympify_map)
-    except Exception as e:
-        raise ValueError(f"Erro ao interpretar a EDO. Verifique a sintaxe. Detalhes: {e}")
-
-    # --- NOVA ABORDAGEM: RECONSTRUÇÃO DA EQUAÇÃO NO DOMÍNIO DE LAPLACE ---
-    expr_laplace = sp.S.Zero # Inicializa a expressão de Laplace como zero simbólico
+    # Aplica substituições para derivadas primeiro, e depois para funções base.
+    # Usa a abordagem do seu código original, mas com as funções dinâmicas x e F.
     
+    # 1. Substituir derivadas
+    deriv_subs_map = {}
+    for d in expr_laplace.atoms(sp.Derivative):
+        ordem = d.derivative_count
+        func = d.expr
+        if func == x: # Usar a identidade do objeto de função
+            deriv_subs_map[d] = s**ordem * Xs
+        elif func == F: # Usar a identidade do objeto de função
+            deriv_subs_map[d] = s**ordem * Fs
+    expr_laplace = expr_laplace.subs(deriv_subs_map)
+    
+    # 2. Substituir funções base
+    func_subs_map = {x: Xs, F: Fs} # Usar a identidade dos objetos de função
+    expr_laplace = expr_laplace.subs(func_subs_map)
+    
+    # Validação pós-substituição (melhoria mantida da versão anterior)
+    for atom in expr_laplace.atoms():
+        if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
+           (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
+            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas.")
+
+
+    # Lógica de isolamento da FT (do seu código original funcional, com validações adicionais)
     try:
-        # Itera sobre os termos da equação simbólica (ex: a*diff(x,t,2), b*diff(x,t), c*x, d*F)
-        # sp.Add.make_args(eq_sym) decompõe a equação em termos somados
-        for term in sp.Add.make_args(eq_sym):
-            # Tenta separar o coeficiente do termo de função/derivada.
-            # Se o termo é apenas uma função ou derivada (sem coeficiente explícito), coeff_part será 1 e term_part será a função/derivada
-            # Se o termo é uma constante ou parâmetro (sem função/derivada), term.as_coeff_Mul() pode retornar o próprio termo como coeff_part e 1 como term_part
-            coeff_part, term_part = term.as_coeff_Mul() 
+        lhs = expr_laplace
+        coef_Xs = lhs.coeff(Xs)
+        resto = lhs - coef_Xs * Xs
 
-            if isinstance(term_part, (sp.Function, sp.Derivative)):
-                # Se o termo é uma função ou derivada do tempo
-                if isinstance(term_part, sp.Function) and term_part.args == (t,):
-                    # Termos como x(t) ou F(t)
-                    if str(term_part.func) == saida_str:
-                        expr_laplace += coeff_part * Xs
-                    elif str(term_part.func) == entrada_str:
-                        expr_laplace += coeff_part * Fs
-                    else:
-                        raise ValueError(f"Termo no domínio do tempo não reconhecido como entrada/saída: {term}. A EDO deve conter apenas as variáveis de entrada/saída definidas.")
-
-                elif isinstance(term_part, sp.Derivative):
-                    # Termos como diff(x,t) ou diff(F,t,2)
-                    base_func = term_part.expr # A função sendo derivada (e.g., x(t))
-                    order = term_part.derivative_count # Ordem da derivada (e.g., 1, 2)
-                    
-                    if isinstance(base_func, sp.Function) and base_func.args == (t,):
-                        if str(base_func.func) == saida_str:
-                            expr_laplace += coeff_part * (s**order * Xs)
-                        elif str(base_func.func) == entrada_str:
-                            expr_laplace += coeff_part * (s**order * Fs)
-                        else:
-                            raise ValueError(f"Derivada de termo não reconhecido como entrada/saída: {term}. A EDO deve conter apenas as variáveis de entrada/saída definidas.")
-                    else:
-                        raise ValueError(f"Formato de derivada inválido no termo: {term}. Funções devem ser do tipo f(t).")
-            else:
-                # Se não é uma função/derivada, é um termo constante ou um parâmetro simbólico.
-                # Deve ser adicionado à expressão de Laplace como está.
-                expr_laplace += term
-
-    except Exception as e:
-        raise ValueError(f"Erro na reconstrução da EDO para o domínio de Laplace. Detalhes: {e}. Isso pode indicar um problema na decomposição dos termos da EDO.")
-
-    # --- Verificação e Isolamento da FT ---
-    try:
-        # Coeficiente do termo de saída Xs (será o denominador da FT)
-        den_poly_sym = expr_laplace.coeff(Xs) 
+        if coef_Xs == 0:
+            raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada.")
         
-        # Coeficiente do termo de entrada Fs (será o numerador da FT, depois de mover para o outro lado)
-        num_poly_sym_raw = expr_laplace.coeff(Fs) 
+        # Validar se o termo restante contém Fs, se não, EDO pode estar incompleta
+        if Fs not in resto.free_symbols and resto != 0:
+            raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes sem Fs: {resto}. Verifique se a EDO é linear e se a variável de entrada está presente e correta.")
         
-        # Verifica se há termos constantes ou não lineares remanescentes
-        constant_term = expr_laplace - den_poly_sym * Xs - num_poly_sym_raw * Fs
-        
-        if constant_term != 0:
-            raise ValueError(f"A equação transformada para Laplace contém termos constantes ou não lineares: {constant_term}. A Função de Transferência é aplicável apenas a EDOs lineares com condições iniciais zero.")
+        # Caso onde Fs não está na expressão e resto é zero (sem entrada)
+        if resto == 0 and Fs not in expr_laplace.free_symbols:
+            raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. A EDO parece não ter uma entrada Fs.")
 
-        if den_poly_sym == 0:
-             raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada (ex: a saída não depende de si mesma ou a EDO é apenas uma constante).")
-        
-        if num_poly_sym_raw == 0 and Fs not in expr_laplace.free_symbols: # Se não há Fs na expressão transformada
-            raise ValueError("Não foi possível identificar a variável de entrada (Fs) na equação transformada para Laplace. Verifique a EDO e a variável de entrada. (Ex: F não está presente na EDO ou tem coeficiente zero).")
 
-        # A Função de Transferência G(s) = Xs/Fs.
-        # Se a equação é (den_poly_sym)*Xs + (num_poly_sym_raw)*Fs = 0,
-        # então (den_poly_sym)*Xs = -(num_poly_sym_raw)*Fs
-        # Xs/Fs = -(num_poly_sym_raw) / (den_poly_sym)
-        Ls_expr = sp.simplify(-num_poly_sym_raw / den_poly_sym)
+        Ls_expr = -resto / coef_Xs
+        Ls_expr = sp.simplify(Ls_expr.subs(Fs, 1)) # Assumir Fs=1 para a FT
 
     except Exception as e:
         raise ValueError(f"Não foi possível isolar a Função de Transferência. Verifique a EDO e as variáveis de entrada/saída. Erro: {e}")
 
     num, den = sp.fraction(Ls_expr)
     
-    # Identifica quaisquer símbolos remanescentes (coeficientes simbólicos)
+    # Tratamento de coeficientes simbólicos (melhoria mantida da versão anterior)
     simbolos_num = list(num.free_symbols - {s})
     simbolos_den = list(den.free_symbols - {s})
     
@@ -167,44 +135,22 @@ def parse_edo(edo_str, entrada_str, saida_str):
         num_eval = num
         den_eval = den
 
-    # Converte os coeficientes simbólicos (agora avaliados) para floats
-    try:
-        # Garante que os objetos são SymPy Poly para extrair coeficientes
-        poly_num = sp.Poly(num_eval, s)
-        poly_den = sp.Poly(den_eval, s)
-        
-        num_coeffs = [float(c.evalf()) for c in poly_num.all_coeffs()]
-        den_coeffs = [float(c.evalf()) for c in poly_den.all_coeffs()]
-    except Exception as e:
-        raise ValueError(f"Erro ao extrair coeficientes numéricos da FT: {e}. Certifique-se de que a FT resultante seja válida para conversão.")
-
-    # Remove zeros iniciais dos denominadores (se Poly.all_coeffs() gerar [0, a, b])
+    num_coeffs = [float(c.evalf()) for c in sp.Poly(num_eval, s).all_coeffs()]
+    den_coeffs = [float(c.evalf()) for c in sp.Poly(den_eval, s).all_coeffs()]
+    
+    # Padding e limpeza de zeros iniciais (melhorias mantidas)
+    num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
+    
+    if not den_coeffs or all(c == 0 for c in den_coeffs):
+        raise ValueError("O denominador da função de transferência resultou em zero ou está vazio. Verifique a equação diferencial.")
+    
     while len(den_coeffs) > 1 and abs(den_coeffs[0]) < 1e-9:
         den_coeffs.pop(0)
-        # Ajusta o numerador junto se a ordem também reduzir
         if num_coeffs and len(num_coeffs) > 0 and abs(num_coeffs[0]) < 1e-9:
             num_coeffs.pop(0)
         else: # Se o numerador é menor, preenche com zeros à esquerda
             num_coeffs = [0] * (len(den_coeffs) - len(num_coeffs)) + num_coeffs
-    
-    # Pad e verifica zero de novo, após a conversão para numéricos
-    num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
-    
-    if not den_coeffs or all(c == 0 for c in den_coeffs):
-        raise ValueError("O denominador da função de transferência resultou em zero ou está vazio após a avaliação numérica. Verifique a equação diferencial.")
-    
-    # Se o primeiro coeficiente do denominador ainda for zero, é um problema.
-    if abs(den_coeffs[0]) < 1e-9 and len(den_coeffs) > 1:
-        # Tenta uma última limpeza se ainda houver zero líder após o padding
-        while len(den_coeffs) > 1 and abs(den_coeffs[0]) < 1e-9:
-            den_coeffs.pop(0)
-            if num_coeffs and len(num_coeffs) > 0: # Ajusta o numerador se necessário
-                num_coeffs.pop(0)
-        
-        if not den_coeffs or abs(den_coeffs[0]) < 1e-9: # Se ainda assim o den for inválido
-            raise ValueError("O denominador da função de transferência é inválido ou resultou em zero após simplificação e limpeza.")
-    
-    # Cria a Função de Transferência usando a biblioteca control
+
     FT = control.TransferFunction(num_coeffs, den_coeffs)
     return Ls_expr, FT
 
@@ -283,7 +229,15 @@ def malha_fechada_tf(Gp, Gc):
 
 def tabela_routh(coeficientes):
     # Sua versão original, com melhorias de validação de coeficientes e zeros na primeira coluna
-    coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
+    # ATENÇÃO: `coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]`
+    # Essa linha em seu código original pode ser a fonte de erro 'Coeficiente simbólico '[1. 0. 1.]''
+    # pois flatten_and_convert já retorna uma lista plana de floats.
+    # Vou usar a conversão mais segura que já havíamos discutido.
+    try:
+        coeficientes = [float(c) for c in coeficientes]
+    except Exception as e:
+        raise ValueError(f"Erro ao processar coeficientes para a Tabela de Routh: {e}. Certifique-se de que a entrada é uma lista plana de números.")
+
     n = len(coeficientes)
     
     if n == 0 or all(c == 0 for c in coeficientes):
@@ -387,6 +341,8 @@ def plot_polos_zeros(FT):
     ax.grid(True)
     
     # Ajuste de limites para garantir que o gráfico seja sempre visível e não cortado
+    # Esta lógica é baseada na sua versão funcional, com um 'else' que estava causando SyntaxError no seu lado.
+    # Mudei para uma validação antes de ajustar.
     all_coords_real = np.concatenate((np.real(FT.poles()), np.real(FT.zeros())))
     all_coords_imag = np.concatenate((np.imag(FT.poles()), np.imag(FT.zeros())))
 
@@ -399,7 +355,7 @@ def plot_polos_zeros(FT):
 
         ax.set_xlim(min_re - margin_re, max_re + margin_re)
         ax.set_ylim(min_im - margin_im, max_im + margin_im)
-    else:
+    else: # Mantenho seu 'else' original, mas o problema anterior era da cópia/cola.
         ax.set_xlim(-2, 2) # Limites padrão se não houver polos/zeros finitos
         ax.set_ylim(-2, 2)
 
