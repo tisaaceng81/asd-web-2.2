@@ -59,15 +59,13 @@ def parse_edo(edo_str, entrada_str, saida_str):
     Xs = sp.symbols(f'{saida_str}s')
     Fs = sp.symbols(f'{entrada_str}s')
 
-    # Cria um dicionário local para o sp.sympify, usando funções genéricas para o parsing
-    # O SymPy criará instâncias específicas dessas funções ao interpretar a string da EDO.
+    # Cria um dicionário local para o sp.sympify para interpretar a EDO
     _local_sympify_map = {
         'sp': sp, 't': t,
-        saida_str: sp.Function(saida_str)(t), # Função de saída no tempo
-        entrada_str: sp.Function(entrada_str)(t), # Função de entrada no tempo
+        saida_str: sp.Function(saida_str)(t),
+        entrada_str: sp.Function(entrada_str)(t),
     }
-    # Mapeia as derivadas para sp.Derivative no local_dict para parsing
-    for i in range(1, 5):
+    for i in range(1, 5): # Mapeia derivadas para sp.Derivative no parsing
         _local_sympify_map[f'diff({saida_str},t,{i})'] = sp.Derivative(sp.Function(saida_str)(t), t, i)
         _local_sympify_map[f'diff({entrada_str},t,{i})'] = sp.Derivative(sp.Function(entrada_str)(t), t, i)
     _local_sympify_map[f'diff({saida_str},t)'] = sp.Derivative(sp.Function(saida_str)(t), t, 1)
@@ -81,57 +79,64 @@ def parse_edo(edo_str, entrada_str, saida_str):
     
     try:
         # Sympify a EDO. `eq_sym` conterá os objetos SymPy `Function` e `Derivative`
-        # que o SymPy criou a partir da string.
         eq_sym = sp.sympify(eq_str_processed, locals=_local_sympify_map)
     except Exception as e:
         raise ValueError(f"Erro ao interpretar a EDO. Verifique a sintaxe. Detalhes: {e}")
 
-    # --- Construção do Mapa de Substituição para Laplace ---
-    laplace_subs_map = {}
+    # --- NOVA ABORDAGEM: RECONSTRUÇÃO DA EQUAÇÃO NO DOMÍNIO DE LAPLACE ---
+    expr_laplace = sp.S.Zero # Inicializa a expressão de Laplace como zero simbólico
     
-    # Percorre todos os átomos (partes elementares) da expressão `eq_sym`
-    # para encontrar as instâncias EXATAS de Function e Derivative que SymPy criou
-    # e mapeá-las para suas transformadas de Laplace.
-    for atom in eq_sym.atoms():
-        if isinstance(atom, sp.Function):
-            # Compara a função pelo nome e se o argumento é 't'
-            if str(atom.func) == saida_str and atom.args == (t,):
-                laplace_subs_map[atom] = Xs
-            elif str(atom.func) == entrada_str and atom.args == (t,):
-                laplace_subs_map[atom] = Fs
-        
-        elif isinstance(atom, sp.Derivative):
-            # Compara a função que está sendo derivada pelo nome e se o argumento é 't'
-            func_expr = atom.expr 
-            order = atom.derivative_count
-            
-            if isinstance(func_expr, sp.Function) and func_expr.args == (t,):
-                if str(func_expr.func) == saida_str:
-                    laplace_subs_map[atom] = s**order * Xs
-                elif str(func_expr.func) == entrada_str:
-                    laplace_subs_map[atom] = s**order * Fs
-    
-    # Aplica as substituições para obter a equação no domínio de Laplace
-    expr_laplace = eq_sym.subs(laplace_subs_map)
-
-    # --- Verificação de Substituição e Isolamento da FT ---
-    # Verifica se restaram termos no domínio do tempo após a substituição
-    for atom in expr_laplace.atoms():
-        if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
-           (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
-            # Se chegarmos aqui, a substituição falhou.
-            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas. Isso pode indicar uma incompatibilidade na sintaxe ou nos nomes das variáveis.")
-
     try:
-        # A equação transformada para Laplace está na forma: Coeficiente_de_Xs * Xs + Coeficiente_de_Fs * Fs + Termo_Constante = 0
-        
+        # Itera sobre os termos da equação simbólica (ex: a*diff(x,t,2), b*diff(x,t), c*x, d*F)
+        # sp.Add.make_args(eq_sym) decompõe a equação em termos somados
+        for term in sp.Add.make_args(eq_sym):
+            # Tenta separar o coeficiente do termo de função/derivada.
+            # Se o termo é apenas uma função ou derivada (sem coeficiente explícito), coeff_part será 1 e term_part será a função/derivada
+            # Se o termo é uma constante ou parâmetro (sem função/derivada), term.as_coeff_Mul() pode retornar o próprio termo como coeff_part e 1 como term_part
+            coeff_part, term_part = term.as_coeff_Mul() 
+
+            if isinstance(term_part, (sp.Function, sp.Derivative)):
+                # Se o termo é uma função ou derivada do tempo
+                if isinstance(term_part, sp.Function) and term_part.args == (t,):
+                    # Termos como x(t) ou F(t)
+                    if str(term_part.func) == saida_str:
+                        expr_laplace += coeff_part * Xs
+                    elif str(term_part.func) == entrada_str:
+                        expr_laplace += coeff_part * Fs
+                    else:
+                        raise ValueError(f"Termo no domínio do tempo não reconhecido como entrada/saída: {term}. A EDO deve conter apenas as variáveis de entrada/saída definidas.")
+
+                elif isinstance(term_part, sp.Derivative):
+                    # Termos como diff(x,t) ou diff(F,t,2)
+                    base_func = term_part.expr # A função sendo derivada (e.g., x(t))
+                    order = term_part.derivative_count # Ordem da derivada (e.g., 1, 2)
+                    
+                    if isinstance(base_func, sp.Function) and base_func.args == (t,):
+                        if str(base_func.func) == saida_str:
+                            expr_laplace += coeff_part * (s**order * Xs)
+                        elif str(base_func.func) == entrada_str:
+                            expr_laplace += coeff_part * (s**order * Fs)
+                        else:
+                            raise ValueError(f"Derivada de termo não reconhecido como entrada/saída: {term}. A EDO deve conter apenas as variáveis de entrada/saída definidas.")
+                    else:
+                        raise ValueError(f"Formato de derivada inválido no termo: {term}. Funções devem ser do tipo f(t).")
+            else:
+                # Se não é uma função/derivada, é um termo constante ou um parâmetro simbólico.
+                # Deve ser adicionado à expressão de Laplace como está.
+                expr_laplace += term
+
+    except Exception as e:
+        raise ValueError(f"Erro na reconstrução da EDO para o domínio de Laplace. Detalhes: {e}. Isso pode indicar um problema na decomposição dos termos da EDO.")
+
+    # --- Verificação e Isolamento da FT (o mesmo que nas últimas versões) ---
+    try:
         # Coeficiente do termo de saída Xs (será o denominador da FT)
         den_poly_sym = expr_laplace.coeff(Xs) 
         
         # Coeficiente do termo de entrada Fs (será o numerador da FT, depois de mover para o outro lado)
         num_poly_sym_raw = expr_laplace.coeff(Fs) 
         
-        # Verifica se há termos constantes ou não lineares remanescentes (devem ser zero para uma FT válida)
+        # Verifica se há termos constantes ou não lineares remanescentes
         constant_term = expr_laplace - den_poly_sym * Xs - num_poly_sym_raw * Fs
         
         if constant_term != 0:
@@ -652,8 +657,8 @@ def perfil():
     if os.path.exists('usuarios.json'):
         with open('usuarios.json', 'r') as f:
             usuarios = json.load(f)
-    else:
-        usuarios = {}
+        else:
+            usuarios = {}
 
     usuario = usuarios.get(email)
     is_admin = session.get('is_admin', False)
