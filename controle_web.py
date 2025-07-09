@@ -14,6 +14,10 @@ app.secret_key = 'sua_chave_secreta' # Mantenha esta chave secreta e única em p
 # === FUNÇÕES AUXILIARES ===
 
 def flatten_and_convert(lst):
+    """
+    Achata uma lista e tenta converter seus elementos para float.
+    Levanta um erro se um elemento simbólico não puder ser avaliado.
+    """
     result = []
     for c in lst:
         # Usar isinstance para Numpy arrays e outras iteráveis para maior robustez
@@ -27,6 +31,10 @@ def flatten_and_convert(lst):
     return result
 
 def pad_coeffs(num_coeffs, den_coeffs):
+    """
+    Preenche os coeficientes do numerador e denominador com zeros
+    para que tenham o mesmo comprimento para a função de transferência.
+    """
     len_num = len(num_coeffs)
     len_den = len(den_coeffs)
     if len_num < len_den:
@@ -46,7 +54,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
         lhs, rhs = eq_str.split('=')
         eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
-    # local_dict: CRÍTICO para que SymPy reconheça as funções e suas derivadas
+    # Dicionário local para sympify: CRÍTICO para que SymPy reconheça as funções e suas derivadas
     # Inclui mapeamentos dinâmicos (saida_str: x, entrada_str: F)
     # E os mapeamentos literais 'x':x, 'F':F do seu código original, que parecem ser a chave para o SymPy.
     local_dict = {
@@ -86,25 +94,25 @@ def parse_edo(edo_str, entrada_str, saida_str):
             expr_laplace = expr_laplace.subs(d, s**ordem * Fs)
 
     # Substituição final de funções base (x, F) por seus símbolos Laplace (Xs, Fs)
-    expr_laplace = expr_laplace.subs({x: Xs, F: Fs})
+    expr_laplace = expr_laplace.subs({x: Xs, F: Fs}) 
 
     # Validação pós-substituição (melhoria mantida)
     for atom in expr_laplace.atoms():
         if (isinstance(atom, sp.Function) and atom.args == (t,)) or \
            (isinstance(atom, sp.Derivative) and atom.expr.args == (t,)):
-            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas. Isso pode indicar uma incompatibilidade na sintaxe ou nos nomes das variáveis.")
+            raise ValueError(f"Erro na transformação de Laplace: A equação ainda contém termos no domínio do tempo como '{atom}'. Verifique a EDO e as variáveis de entrada/saída fornecidas.")
 
 
     # Lógica de isolamento da FT (do seu código original funcional, com validações adicionais)
     try:
         lhs = expr_laplace
-        coef_Xs = lhs.coeff(Xs) 
-        resto = lhs - coef_Xs * Xs
+        coef_Xs = lhs.coeff(Xs) # AQUI é onde falhava antes
 
         if coef_Xs == 0:
             raise ValueError("O coeficiente da variável de saída (Xs) no denominador é zero, indicando uma Função de Transferência inválida ou EDO mal formada.")
         
-        # Validações para o termo restante (resto)
+        resto = lhs - coef_Xs * Xs
+
         if Fs not in resto.free_symbols and resto != 0:
             raise ValueError(f"Não foi possível isolar a Função de Transferência. Termos remanescentes inesperados: {resto}. Verifique se a EDO é linear e homogênea (assumindo CI zero) e se a variável de entrada está presente e correta.")
         
