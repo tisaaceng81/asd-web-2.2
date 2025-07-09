@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 import json
 import os
@@ -140,14 +139,23 @@ def parse_edo(edo_str, entrada_str, saida_str):
     except Exception as e:
         raise ValueError(f"Não foi possível derivar a função de transferência. Certifique-se de que a EDO relaciona '{saida_str}' e '{entrada_str}'. Erro: {e}")
 
-    # Verifica se a função de transferência contém coeficientes simbólicos (qualquer símbolo diferente de 's')
-    has_symbolic_coeffs = False
-    for arg in Ls_expr.free_symbols:
-        if arg != s: # Se qualquer símbolo além de 's' existir, é um coeficiente simbólico
-            has_symbolic_coeffs = True
-            break
-    
     num, den = sp.fraction(Ls_expr)
+
+    # NOVO: Verificação mais robusta de coeficientes numéricos
+    has_symbolic_coeffs = False
+    try:
+        num_poly = sp.Poly(num, s)
+        den_poly = sp.Poly(den, s)
+        
+        for coeff in num_poly.all_coeffs() + den_poly.all_coeffs():
+            if not coeff.is_number:
+                has_symbolic_coeffs = True
+                break
+    except Exception as poly_e:
+        # Se não for um polinômio em 's', provavelmente contém outros símbolos
+        has_symbolic_coeffs = True
+        # Não levante erro aqui, apenas marque como simbólico para tratamento posterior
+        # print(f"Debug: Erro ao formar polinômio, tratando como simbólico: {poly_e}")
 
     if has_symbolic_coeffs:
         # Se houver coeficientes simbólicos, não podemos criar uma TransferFunction numérica
@@ -155,8 +163,8 @@ def parse_edo(edo_str, entrada_str, saida_str):
     else:
         # Se não houver coeficientes simbólicos, converte para numérico e cria a TransferFunction
         try:
-            num_coeffs = [float(c) for c in sp.Poly(num, s).all_coeffs()]
-            den_coeffs = [float(c) for c in sp.Poly(den, s).all_coeffs()]
+            num_coeffs = [float(c) for c in num_poly.all_coeffs()]
+            den_coeffs = [float(c) for c in den_poly.all_coeffs()]
             num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
             FT = control.TransferFunction(num_coeffs, den_coeffs)
             return Ls_expr, FT, False # Retorna expressão simbólica, FT, e flag simbólica
