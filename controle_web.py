@@ -191,7 +191,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
         # Ajusta o numerador junto se a ordem também reduzir, ou preenche com zero
         if num_coeffs and len(num_coeffs) > 0 and abs(num_coeffs[0]) < 1e-9:
             num_coeffs.pop(0)
-        else: # Se o numerador é menor que o denominador após a remoção de zeros, preenche com zeros à esquerda
+        else: # Se o numerador é menor que o denominador após o remoção de zeros, preenche com zeros à esquerda
             num_coeffs = [0] * (len(den_coeffs) - len(num_coeffs)) + num_coeffs
     
     # Pad e verifica zero de novo, após a conversão para numéricos
@@ -429,14 +429,14 @@ def plot_polos_zeros(FT):
     ax.legend()
     ax.grid(True)
     
+    # Set fixed limits first, regardless of poles/zeros size
+    ax.set_xlim(-5, 5)
+    ax.set_ylim(-5, 5)
+
+    # If there are actual poles/zeros, adjust limits dynamically
     all_coords_real = np.concatenate((np.real(poles), np.real(zeros)))
     all_coords_imag = np.concatenate((np.imag(poles), np.imag(zeros)))
 
-    # Set default limits first
-    ax.set_xlim(-2, 2)
-    ax.set_ylim(-2, 2)
-
-    # Adjust limits dynamically IF there are poles/zeros
     if all_coords_real.size > 0 and all_coords_imag.size > 0:
         min_re, max_re = all_coords_real.min(), all_coords_real.max()
         min_im, max_im = all_coords_imag.min(), all_coords_imag.max()
