@@ -1,9 +1,7 @@
 import os
-import json
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-
 from flask_sqlalchemy import SQLAlchemy
-from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from funcoes_auxiliares import (
     parse_edo, ft_to_latex, resposta_degrau, estima_LT, sintonia_ziegler_nichols,
@@ -11,104 +9,76 @@ from funcoes_auxiliares import (
     flatten_and_convert, tabela_routh
 )
 
-load_dotenv()
-
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'sua_chave_secreta_segura')
+app.secret_key = os.environ.get('SECRET_KEY', 'sua_chave_secreta_padrao')
 
-USE_DATABASE = os.environ.get('DATABASE_URL') is not None
+# Configuração do Banco de Dados
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
-if USE_DATABASE:
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    db = SQLAlchemy(app)
+# Modelo de Dados do Usuário
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    senha = db.Column(db.String(255), nullable=False)
+    aprovado = db.Column(db.Boolean, default=False, nullable=False)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
 
-    class Usuario(db.Model):
-        __tablename__ = 'usuarios'
-        id = db.Column(db.Integer, primary_key=True)
-        nome = db.Column(db.String(100), nullable=False)
-        email = db.Column(db.String(100), unique=True, nullable=False)
-        senha = db.Column(db.String(100), nullable=False)
-        aprovado = db.Column(db.Boolean, default=False)
-        is_admin = db.Column(db.Boolean, default=False)
+    def __repr__(self):
+        return f'<User {self.email}>'
 
-    def inicializar_banco():
-        with app.app_context():
-            db.create_all()
-            admin_user = Usuario.query.filter_by(email='tisaaceng@gmail.com').first()
-            if not admin_user:
-                new_admin = Usuario(
-                    nome="Tiago Carneiro",
-                    email='tisaaceng@gmail.com',
-                    senha="4839AT81",
-                    aprovado=True,
-                    is_admin=True
-                )
-                db.session.add(new_admin)
-                db.session.commit()
-    
-    inicializar_banco()
+# Bloco para criar o banco de dados e o admin inicial
+with app.app_context():
+    db.create_all()
+    admin_email = 'tisaaceng@gmail.com'
+    admin_user = User.query.filter_by(email=admin_email).first()
+    if not admin_user:
+        hashed_password = generate_password_hash('4839AT81', method='pbkdf2:sha256')
+        new_admin = User(
+            nome='Tiago Carneiro',
+            email=admin_email,
+            senha=hashed_password,
+            aprovado=True,
+            is_admin=True
+        )
+        db.session.add(new_admin)
+        db.session.commit()
+        print("Usuário administrador adicionado ao banco de dados.")
 
-else:
-    pass
+# === ROTAS ===
 
 @app.route('/')
 def home():
-    is_logged_in = 'usuario_logado' in session
-    is_admin = session.get('is_admin', False)
-    return render_template('index.html', is_logged_in=is_logged_in, is_admin=is_admin)
+    user_email = session.get('usuario_logado')
+    return render_template('index.html', user_email=user_email, is_admin=session.get('is_admin', False))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         email = request.form['email']
         senha = request.form['senha']
+        
+        user = User.query.filter_by(email=email).first()
 
-        if USE_DATABASE:
-            user = Usuario.query.filter_by(email=email).first()
-            if user and user.senha == senha:
+        if user and check_password_hash(user.senha, senha):
+            if user.aprovado:
+                session['usuario_logado'] = user.email
+                session['is_admin'] = user.is_admin
+                flash('Login bem-sucedido!', 'success')
                 if user.is_admin:
-                    session['usuario_logado'] = user.email
-                    session['is_admin'] = True
-                    flash('Login de administrador bem-sucedido!', 'success')
                     return redirect(url_for('admin'))
-                elif user.aprovado:
-                    session['usuario_logado'] = user.email
-                    session['is_admin'] = False
-                    flash('Login bem-sucedido!', 'success')
-                    return redirect(url_for('painel'))
                 else:
-                    flash('Seu cadastro ainda não foi aprovado.', 'warning')
-                    return redirect(url_for('login'))
+                    return redirect(url_for('painel'))
             else:
-                flash('Credenciais inválidas. Verifique seu email e senha.', 'danger')
+                flash('Seu cadastro ainda não foi aprovado. Por favor, aguarde a aprovação do administrador.', 'warning')
                 return redirect(url_for('login'))
         else:
-            if os.path.exists('usuarios.json'):
-                with open('usuarios.json', 'r') as f:
-                    usuarios = json.load(f)
-            else:
-                usuarios = {}
-            
-            if email == 'tisaaceng@gmail.com' and senha == '4839AT81':
-                session['usuario_logado'] = email
-                session['is_admin'] = True
-                flash('Login de administrador bem-sucedido!', 'success')
-                return redirect(url_for('admin'))
-            
-            if email in usuarios and usuarios[email]['senha'] == senha:
-                if usuarios[email].get('aprovado', False):
-                    session['usuario_logado'] = email
-                    session['is_admin'] = False
-                    flash('Login bem-sucedido!', 'success')
-                    return redirect(url_for('painel'))
-                else:
-                    flash('Seu cadastro ainda não foi aprovado. Por favor, aguarde a aprovação do administrador.', 'warning')
-                    return redirect(url_for('login'))
-            else:
-                flash('Credenciais inválidas. Verifique seu email e senha.', 'danger')
-                return redirect(url_for('login'))
-    return render_template('login.html', is_logged_in=False, is_admin=False)
+            flash('Credenciais inválidas. Verifique seu email e senha.', 'danger')
+            return redirect(url_for('login'))
+    return render_template('login.html')
 
 @app.route('/cadastro', methods=['GET', 'POST'])
 def cadastro():
@@ -117,96 +87,64 @@ def cadastro():
         email = request.form['email']
         senha = request.form['senha']
         
-        if USE_DATABASE:
-            existing_user = Usuario.query.filter_by(email=email).first()
-            if existing_user:
-                flash('Este email já está cadastrado. Por favor, use outro.', 'warning')
-                return redirect(url_for('cadastro'))
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            flash('Este email já está cadastrado. Por favor, use outro.', 'warning')
+            return redirect(url_for('cadastro'))
 
-            new_user = Usuario(nome=nome, email=email, senha=senha, aprovado=False, is_admin=False)
-            db.session.add(new_user)
-            db.session.commit()
-            flash('Seu cadastro foi enviado para aprovação.', 'success')
-            return redirect(url_for('login'))
-        else:
-            if os.path.exists('usuarios.json'):
-                with open('usuarios.json', 'r') as f:
-                    usuarios = json.load(f)
-            else:
-                usuarios = {}
-
-            if email in usuarios or email == 'tisaaceng@gmail.com':
-                flash('Este email já está cadastrado ou reservado. Por favor, use outro.', 'warning')
-                return redirect(url_for('cadastro'))
-
-            usuarios[email] = {'nome': nome, 'senha': senha, 'aprovado': False}
-            with open('usuarios.json', 'w') as f:
-                json.dump(usuarios, f, indent=4)
-            flash('Seu cadastro foi enviado para aprovação. Você será notificado por email quando for aprovado.', 'success')
-            return redirect(url_for('login'))
-    return render_template('cadastro.html', is_logged_in=False, is_admin=False)
+        hashed_password = generate_password_hash(senha, method='pbkdf2:sha256')
+        
+        new_user = User(
+            nome=nome,
+            email=email,
+            senha=hashed_password,
+            aprovado=False,
+            is_admin=False
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        
+        flash('Seu cadastro foi enviado para aprovação.', 'success')
+        return redirect(url_for('login'))
+    return render_template('cadastro.html')
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
-    if 'usuario_logado' not in session or session.get('is_admin') != True:
+    if 'usuario_logado' not in session or not session.get('is_admin'):
         flash('Acesso negado. Apenas o administrador pode acessar esta página.', 'danger')
         return redirect(url_for('login'))
 
     if request.method == 'POST':
         email_to_process = request.form.get('email')
         action = request.form.get('action')
-
-        if USE_DATABASE:
-            user = Usuario.query.filter_by(email=email_to_process).first()
-            if user:
-                if action == 'aprovar':
-                    user.aprovado = True
-                    db.session.commit()
-                    flash(f'Usuário {email_to_process} aprovado com sucesso!', 'success')
-                elif action == 'excluir':
-                    db.session.delete(user)
-                    db.session.commit()
-                    flash(f'Usuário {email_to_process} excluído com sucesso.', 'success')
-            else:
-                flash(f'Usuário {email_to_process} não encontrado.', 'warning')
+        user = User.query.filter_by(email=email_to_process).first()
+        
+        if user:
+            if action == 'aprovar':
+                user.aprovado = True
+                db.session.commit()
+                flash(f'Usuário {user.email} aprovado com sucesso!', 'success')
+            elif action == 'excluir':
+                db.session.delete(user)
+                db.session.commit()
+                flash(f'Usuário {user.email} excluído com sucesso.', 'success')
         else:
-            if os.path.exists('usuarios.json'):
-                with open('usuarios.json', 'r') as f:
-                    usuarios = json.load(f)
-                if email_to_process in usuarios:
-                    if action == 'aprovar':
-                        usuarios[email_to_process]['aprovado'] = True
-                        flash(f'Usuário {email_to_process} aprovado com sucesso!', 'success')
-                    elif action == 'excluir':
-                        del usuarios[email_to_process]
-                        flash(f'Usuário {email_to_process} excluído com sucesso.', 'success')
-                    with open('usuarios.json', 'w') as f:
-                        json.dump(usuarios, f, indent=4)
-                else:
-                    flash(f'Usuário {email_to_process} não encontrado.', 'warning')
+            flash(f'Usuário {email_to_process} não encontrado.', 'warning')
 
-    if USE_DATABASE:
-        nao_aprovados = Usuario.query.filter_by(aprovado=False, is_admin=False).all()
-        nao_aprovados_dict = {u.email: {'nome': u.nome, 'email': u.email} for u in nao_aprovados}
-    else:
-        if os.path.exists('usuarios.json'):
-            with open('usuarios.json', 'r') as f:
-                usuarios = json.load(f)
-            nao_aprovados_dict = {k: v for k, v in usuarios.items() if not v.get('aprovado', False)}
-        else:
-            nao_aprovados_dict = {}
-
-    return render_template('admin.html', usuarios=nao_aprovados_dict, is_admin=True)
+    nao_aprovados = User.query.filter_by(aprovado=False, is_admin=False).all()
+    nao_aprovados_dict = {user.email: {'nome': user.nome} for user in nao_aprovados}
+    return render_template('admin.html', usuarios=nao_aprovados_dict, is_admin=session.get('is_admin'))
 
 @app.route('/painel')
 def painel():
-    if 'usuario_logado' not in session or session.get('is_admin') == True:
-        flash('Acesso negado. Por favor, faça login com uma conta de usuário.', 'danger')
+    if 'usuario_logado' not in session:
+        flash('Acesso negado. Por favor, faça login.', 'danger')
         return redirect(url_for('login'))
     
-    is_logged_in = 'usuario_logado' in session
-    is_admin = session.get('is_admin', False)
-    return render_template('painel.html', is_logged_in=is_logged_in, is_admin=is_admin)
+    user = User.query.filter_by(email=session['usuario_logado']).first()
+    is_admin = user.is_admin if user else False
+    
+    return render_template('painel.html', is_admin=is_admin)
 
 @app.route('/logout')
 def logout():
@@ -221,24 +159,10 @@ def simulador():
         flash('Faça login para acessar o simulador.', 'warning')
         return redirect(url_for('login'))
 
-    email = session['usuario_logado']
-
-    if USE_DATABASE:
-        user = Usuario.query.filter_by(email=email).first()
-        if not user or not user.aprovado:
-            flash('Seu cadastro ainda não foi aprovado para usar o simulador.', 'warning')
-            return redirect(url_for('painel'))
-    else:
-        if email != 'tisaaceng@gmail.com':
-            if os.path.exists('usuarios.json'):
-                with open('usuarios.json', 'r') as f:
-                    usuarios = json.load(f)
-                if not usuarios.get(email, {}).get('aprovado', False):
-                    flash('Seu cadastro ainda não foi aprovado para usar o simulador.', 'warning')
-                    return redirect(url_for('painel'))
-            else:
-                flash('Arquivo de usuários não encontrado. Não foi possível verificar o status de aprovação.', 'warning')
-                return redirect(url_for('login'))
+    user = User.query.filter_by(email=session['usuario_logado']).first()
+    if not user or not user.aprovado:
+        flash('Seu cadastro ainda não foi aprovado para usar o simulador.', 'warning')
+        return redirect(url_for('painel'))
 
     resultado = None
     error = None
@@ -287,7 +211,7 @@ def simulador():
                     img_resposta_aberta_path = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', deslocamento=0.0)
                     img_resposta_fechada_path = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', deslocamento=1.0)
                     img_pz_path = plot_polos_zeros(FT)
-
+                    
                     den_coefs = flatten_and_convert(FT.den[0])
                     routh_table = tabela_routh(den_coefs)
 
@@ -307,10 +231,8 @@ def simulador():
                 error = f"Erro de entrada ou processamento: {str(ve)}"
             except Exception as e:
                 error = f"Ocorreu um erro inesperado: {str(e)}. Por favor, verifique a EDO e as variáveis."
-    
-    is_logged_in = 'usuario_logado' in session
     is_admin = session.get('is_admin', False)
-    return render_template('simulador.html', resultado=resultado, error=error, warning=warning, is_logged_in=is_logged_in, is_admin=is_admin)
+    return render_template('simulador.html', resultado=resultado, error=error, warning=warning, is_admin=is_admin)
 
 @app.route('/perfil')
 def perfil():
@@ -318,23 +240,13 @@ def perfil():
         flash('Faça login para acessar o perfil.', 'warning')
         return redirect(url_for('login'))
 
-    email = session['usuario_logado']
-
-    if USE_DATABASE:
-        user = Usuario.query.filter_by(email=email).first()
-        usuario = {'nome': user.nome, 'email': user.email, 'aprovado': user.aprovado, 'is_admin': user.is_admin}
+    user = User.query.filter_by(email=session['usuario_logado']).first()
+    if user:
+        is_admin = user.is_admin
+        return render_template('perfil.html', usuario={'nome': user.nome}, email=user.email, is_admin=is_admin)
     else:
-        if os.path.exists('usuarios.json'):
-            with open('usuarios.json', 'r') as f:
-                usuarios = json.load(f)
-        else:
-            usuarios = {}
-        usuario = usuarios.get(email)
-        usuario['is_admin'] = (email == 'tisaaceng@gmail.com')
-
-    is_logged_in = 'usuario_logado' in session
-    is_admin = session.get('is_admin', False)
-    return render_template('perfil.html', usuario=usuario, email=email, is_logged_in=is_logged_in, is_admin=is_admin)
+        flash('Usuário não encontrado.')
+        return redirect(url_for('logout'))
 
 @app.route('/alterar_senha', methods=['GET', 'POST'])
 def alterar_senha():
@@ -346,61 +258,37 @@ def alterar_senha():
         senha_atual = request.form.get('senha_atual')
         nova_senha = request.form.get('nova_senha')
         confirmar_senha = request.form.get('confirmar_senha')
-
-        email = session['usuario_logado']
         
-        if USE_DATABASE:
-            user = Usuario.query.filter_by(email=email).first()
-            if not user or user.senha != senha_atual:
-                flash('Senha atual incorreta.', 'danger')
-                return redirect(url_for('alterar_senha'))
-            
-            if nova_senha != confirmar_senha:
-                flash('Nova senha e confirmação não conferem.', 'danger')
-                return redirect(url_for('alterar_senha'))
+        user = User.query.filter_by(email=session['usuario_logado']).first()
+        if not user or not check_password_hash(user.senha, senha_atual):
+            flash('Senha atual incorreta.', 'danger')
+            return redirect(url_for('alterar_senha'))
 
-            user.senha = nova_senha
-            db.session.commit()
-            flash('Senha alterada com sucesso.', 'success')
-            return redirect(url_for('perfil'))
-        else:
-            if os.path.exists('usuarios.json'):
-                with open('usuarios.json', 'r') as f:
-                    usuarios = json.load(f)
-            else:
-                usuarios = {}
-                
-            if usuarios[email]['senha'] != senha_atual:
-                flash('Senha atual incorreta.', 'danger')
-                return redirect(url_for('alterar_senha'))
+        if nova_senha != confirmar_senha:
+            flash('Nova senha e confirmação não conferem.', 'danger')
+            return redirect(url_for('alterar_senha'))
+        
+        if not nova_senha:
+            flash('A nova senha não pode ser vazia.', 'danger')
+            return redirect(url_for('alterar_senha'))
 
-            if nova_senha != confirmar_senha:
-                flash('Nova senha e confirmação não conferem.', 'danger')
-                return redirect(url_for('alterar_senha'))
-            
-            if not nova_senha:
-                flash('A nova senha não pode ser vazia.', 'danger')
-                return redirect(url_for('alterar_senha'))
+        user.senha = generate_password_hash(nova_senha, method='pbkdf2:sha256')
+        db.session.commit()
+        
+        flash('Senha alterada com sucesso.', 'success')
+        return redirect(url_for('perfil'))
 
-            usuarios[email]['senha'] = nova_senha
-            with open('usuarios.json', 'w') as f:
-                json.dump(usuarios, f, indent=4)
-            flash('Senha alterada com sucesso.', 'success')
-            return redirect(url_for('perfil'))
-
-    is_logged_in = 'usuario_logado' in session
     is_admin = session.get('is_admin', False)
-    return render_template('alterar_senha.html', is_logged_in=is_logged_in, is_admin=is_admin)
+    return render_template('alterar_senha.html', is_admin=is_admin)
 
 @app.route('/funcao_transferencia')
 def funcao_transferencia():
     ft_latex = session.get('ft_latex', "Função de Transferência não disponível.")
-    is_logged_in = 'usuario_logado' in session
     is_admin = session.get('is_admin', False)
-    return render_template('transferencia.html', ft_latex=ft_latex, is_logged_in=is_logged_in, is_admin=is_admin)
+    return render_template('transferencia.html', ft_latex=ft_latex, is_admin=is_admin)
 
 
 # === EXECUÇÃO PRINCIPAL ===
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5050))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=True)
