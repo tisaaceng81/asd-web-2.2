@@ -9,14 +9,13 @@
             font-family: Arial, sans-serif;
             background-color: #f9f9f9;
             padding: 20px;
-            margin: 0; /* Adicionado para garantir que não haja margem padrão */
+            margin: 0;
         }
         h1 {
             text-align: center;
             margin-bottom: 30px;
-            color: #333; /* Adicionado cor para consistência */
+            color: #333;
         }
-        /* Estilos da barra de navegação */
         .navbar {
             background-color: #333;
             overflow: hidden;
@@ -38,11 +37,10 @@
         .navbar a.right {
             float: right;
         }
-        /* Ajuste de margem para o conteúdo principal */
         .content-container {
-            max-width: 900px; /* Alinhado com outros templates se desejar */
-            margin: 0 auto; /* Centraliza o conteúdo */
-            padding: 20px; /* Espaçamento interno */
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
         }
         .user-list {
             max-width: 600px;
@@ -55,7 +53,7 @@
         .user-item {
             display: flex;
             justify-content: space-between;
-            align-items: center; /* Alinha itens verticalmente no centro */
+            align-items: center;
             padding: 10px 0;
             border-bottom: 1px solid #ddd;
         }
@@ -73,12 +71,11 @@
             border-radius: 5px;
             cursor: pointer;
             font-size: 14px;
-            transition: background-color 0.3s ease; /* Adicionado transição */
+            transition: background-color 0.3s ease;
         }
         button:hover {
             background-color: #218838;
         }
-        /* Estilos para mensagens flash (revisados para categorias) */
         .messages {
             list-style-type: none;
             padding: 0;
@@ -93,7 +90,7 @@
             display: block;
             margin-left: auto;
             margin-right: auto;
-            max-width: 800px; /* Para as mensagens flash não serem muito largas */
+            max-width: 800px;
         }
         .messages .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .messages .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
@@ -130,7 +127,8 @@
                         <span>{{ dados['nome'] }} ({{ email }})</span>
                         <form method="POST" action="{{ url_for('admin') }}">
                             <input type="hidden" name="email" value="{{ email }}" />
-                            <button type="submit">Aprovar</button>
+                            <button type="submit" name="action" value="aprovar">Aprovar</button>
+                            <button type="submit" name="action" value="excluir" style="background-color: #dc3545;">Excluir</button>
                         </form>
                     </div>
                 {% endfor %}
