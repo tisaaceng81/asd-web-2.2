@@ -4,122 +4,106 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Home - Analisador de Sistemas Dinâmicos</title>
-
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async
             src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
     </script>
-
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 0; /* Removido padding-bottom padrão para navbar fixa */
-            background-color: #f4f4f4; /* Cor de fundo consistente */
+            padding: 0;
+            background-color: #f4f4f4;
             display: flex;
-            flex-direction: column; /* Para layout com navbar fixa no topo */
-            min-height: 100vh; /* Garante que o body ocupe a altura total da viewport */
+            flex-direction: column;
+            min-height: 100vh;
         }
-
-        /* Navbar estilo unificado */
         .navbar {
-            background-color: #333; /* Cor de fundo escura */
+            background-color: #333;
             overflow: hidden;
             width: 100%;
-            position: fixed; /* Navbar fixa no topo */
+            position: fixed;
             top: 0;
             left: 0;
-            z-index: 1000; /* Garante que a navbar fique acima de outros elementos */
-            border-radius: 0; /* Remove bordas arredondadas para navbar fixa */
-            display: flex; /* Flexbox para alinhar itens */
-            justify-content: flex-start; /* Alinha itens à esquerda por padrão */
-            align-items: center; /* Centraliza verticalmente */
-            padding: 0 10px; /* Pequeno padding nas laterais */
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2); /* Sombra para destaque */
+            z-index: 1000;
+            border-radius: 0;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            padding: 0 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
-
         .navbar a {
             display: block;
             color: #f2f2f2;
             text-align: center;
             padding: 14px 16px;
             text-decoration: none;
-            transition: background-color 0.3s ease, color 0.3s ease; /* Transição suave */
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
-
         .navbar a:hover {
             background-color: #ddd;
             color: black;
         }
-
-        .navbar .right {
-            margin-left: auto; /* Empurra os itens à direita para o final */
+        .navbar a.right {
+            margin-left: auto;
         }
-
-        /* Estilos para o conteúdo abaixo da navbar fixa */
         .content-offset {
-            padding-top: 70px; /* Ajusta conforme a altura da sua navbar (~50px + margem) */
-            flex-grow: 1; /* Permite que o conteúdo principal ocupe o espaço restante */
-            width: 100%; /* Garante que o conteúdo ocupe a largura total */
-            display: flex; /* Torna flexível para centralizar o wrapper */
-            flex-direction: column; /* Organiza itens verticalmente */
-            justify-content: center; /* Centraliza o wrapper verticalmente */
-            align-items: center; /* Centraliza o wrapper horizontalmente */
+            padding-top: 70px;
+            flex-grow: 1;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
         }
-
         .main-content-wrapper {
-            max-width: 900px; /* Largura máxima para o conteúdo principal */
-            width: 90%; /* Use porcentagem para melhor responsividade */
-            padding: 20px; /* Padding interno */
-            background-color: #fff; /* Fundo branco para o conteúdo */
+            max-width: 900px;
+            width: 90%;
+            padding: 20px;
+            background-color: #fff;
             border-radius: 8px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
             text-align: center;
-            flex-grow: 1; /* Permite que o wrapper se expanda verticalmente */
-            display: flex; /* Torna o wrapper flexível */
-            flex-direction: column; /* Organiza os itens (h1, img) verticalmente */
-            justify-content: center; /* Centraliza h1 e img verticalmente */
-            align-items: center; /* Centraliza h1 e img horizontalmente */
-            /* A min-height dinâmica calcula o espaço entre navbar e footer */
-            min-height: calc(100vh - 70px - 60px); /* 100vh - altura da navbar - altura estimada do footer */
-            box-sizing: border-box; /* Inclui padding na min-height */
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: calc(100vh - 70px - 60px);
+            box-sizing: border-box;
         }
-
         .logo {
             display: block;
-            margin: 20px auto; /* Margem reduzida para dar mais espaço à imagem */
-            width: auto; /* Permite que a largura se ajuste proporcionalmente */
-            max-width: 80%; /* Limita a largura para não ser muito grande */
-            height: auto; /* Mantém a proporção da imagem */
-            flex-grow: 1; /* Permite que a imagem se estique verticalmente dentro do wrapper */
-            object-fit: contain; /* Garante que a imagem se ajuste sem cortar ou distorcer */
-            max-height: calc(100% - 40px); /* Limita a altura máxima do logo dentro do wrapper, considerando as margens */
+            margin: 20px auto;
+            width: auto;
+            max-width: 80%;
+            height: auto;
+            flex-grow: 1;
+            object-fit: contain;
+            max-height: calc(100% - 40px);
         }
-
         h1 {
-            margin-top: 0; /* Remove margem superior se usar flex para centralização */
-            margin-bottom: 20px; /* Espaço abaixo do título */
+            margin-top: 0;
+            margin-bottom: 20px;
             color: #333;
         }
-
         footer {
             text-align: center;
             font-size: small;
             color: gray;
-            padding: 20px; /* Mais padding para melhor visualização */
+            padding: 20px;
             background-color: #f9f9f9;
-            margin-top: auto; /* Empurra o footer para o final se o conteúdo for curto */
-            width: 100%; /* Ocupa a largura total */
-            box-sizing: border-box; /* Inclui padding na largura total */
+            margin-top: auto;
+            width: 100%;
+            box-sizing: border-box;
         }
-
-        /* Estilos para mensagens flash */
         .messages {
             list-style-type: none;
             padding: 0;
             text-align: center;
             margin-bottom: 20px;
-            margin-top: 20px; /* Ajuste para espaçamento após o título se o wrapper não for usado */
+            margin-top: 20px;
         }
         .messages li {
             padding: 10px;
@@ -138,16 +122,17 @@
     </style>
 </head>
 <body>
-
     <div class="navbar">
         <a href="{{ url_for('home') }}">Home</a>
-        <a href="{{ url_for('login') }}">Login</a>
-        <a href="{{ url_for('cadastro') }}">Cadastro</a>
-        {% if admin %} <a href="{{ url_for('admin') }}">Admin</a>
-        {% endif %}
-        {% if user_email %} <a href="{{ url_for('painel') }}">Painel</a>
+        {% if is_logged_in %}
             <a href="{{ url_for('perfil') }}">Perfil</a>
             <a href="{{ url_for('logout') }}" class="right">Sair</a>
+        {% else %}
+            <a href="{{ url_for('login') }}">Login</a>
+            <a href="{{ url_for('cadastro') }}">Cadastro</a>
+        {% endif %}
+        {% if is_admin %}
+            <a href="{{ url_for('admin') }}">Admin</a>
         {% endif %}
     </div>
 
