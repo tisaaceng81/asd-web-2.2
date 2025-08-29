@@ -2,14 +2,72 @@ import os
 import json
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 
+# NOVO: Importações para o banco de dados
+from flask_sqlalchemy import SQLAlchemy
+from dotenv import load_dotenv
+
 from funcoes_auxiliares import (
     parse_edo, ft_to_latex, resposta_degrau, estima_LT, sintonia_ziegler_nichols,
     cria_pid_tf, malha_fechada_tf, salvar_grafico_resposta, plot_polos_zeros,
     flatten_and_convert, tabela_routh
 )
 
+# NOVO: Carregar variáveis de ambiente
+load_dotenv()
+
 app = Flask(__name__)
-app.secret_key = 'sua_chave_secreta'  # Altere para uma chave segura
+# NOVO: Use a variável de ambiente para a chave secreta
+app.secret_key = os.environ.get('SECRET_KEY', 'sua_chave_secreta_segura')
+
+# NOVO: Lógica de seleção do banco de dados
+USE_DATABASE = os.environ.get('DATABASE_URL') is not None
+
+if USE_DATABASE:
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    db = SQLAlchemy(app)
+
+    # NOVO: Modelo de dados para a tabela de usuários
+    class Usuario(db.Model):
+        __tablename__ = 'usuarios'
+        id = db.Column(db.Integer, primary_key=True)
+        nome = db.Column(db.String(100), nullable=False)
+        email = db.Column(db.String(100), unique=True, nullable=False)
+        senha = db.Column(db.String(100), nullable=False)
+        aprovado = db.Column(db.Boolean, default=False)
+        is_admin = db.Column(db.Boolean, default=False)
+
+    # NOVO: Função para inicializar o banco de dados e o admin
+    def inicializar_banco():
+        with app.app_context():
+            db.create_all()
+            # Verificar se o admin fixo já existe
+            admin_user = Usuario.query.filter_by(email='tisaaceng@gmail.com').first()
+            if not admin_user:
+                admin_data = {
+                    "nome": "Tiago Carneiro",
+                    "senha": "4839AT81",
+                    "aprovado": True,
+                    "is_admin": True
+                }
+                new_admin = Usuario(
+                    nome=admin_data['nome'],
+                    email='tisaaceng@gmail.com',
+                    senha=admin_data['senha'],
+                    aprovado=admin_data['aprovado'],
+                    is_admin=admin_data['is_admin']
+                )
+                db.session.add(new_admin)
+                db.session.commit()
+    
+    # NOVO: Inicializa o banco de dados no momento da execução
+    # CORREÇÃO: Movido para fora do if __name__ == '__main__':
+    inicializar_banco()
+
+else:
+    # A lógica original do JSON permanece
+    # Removido: A leitura de 'usuarios.json' foi movida para as rotas
+    pass
 
 # === ROTAS ===
 
@@ -23,31 +81,47 @@ def login():
     if request.method == 'POST':
         email = request.form['email']
         senha = request.form['senha']
-        if os.path.exists('usuarios.json'):
-            with open('usuarios.json', 'r') as f:
-                usuarios = json.load(f)
-        else:
-            usuarios = {}
 
-        # Admin fixo com email e senha definidos
-        if email == 'tisaaceng@gmail.com' and senha == '4839AT81':
-            session['usuario_logado'] = email
-            session['is_admin'] = True
-            flash('Login de administrador bem-sucedido!')
-            return redirect(url_for('admin'))
-
-        if email in usuarios and usuarios[email]['senha'] == senha:
-            if usuarios[email].get('aprovado', False):
-                session['usuario_logado'] = email
-                session['is_admin'] = False
-                flash('Login bem-sucedido!')
-                return redirect(url_for('painel'))
+        if USE_DATABASE:
+            user = Usuario.query.filter_by(email=email).first()
+            if user and user.senha == senha:
+                if user.aprovado:
+                    session['usuario_logado'] = user.email
+                    session['is_admin'] = user.is_admin
+                    flash('Login bem-sucedido!', 'success')
+                    return redirect(url_for('painel'))
+                else:
+                    flash('Seu cadastro ainda não foi aprovado.', 'warning')
+                    return redirect(url_for('login'))
             else:
-                flash('Seu cadastro ainda não foi aprovado. Por favor, aguarde a aprovação do administrador.')
+                flash('Credenciais inválidas. Verifique seu email e senha.', 'danger')
                 return redirect(url_for('login'))
         else:
-            flash('Credenciais inválidas. Verifique seu email e senha.')
-            return redirect(url_for('login'))
+            if os.path.exists('usuarios.json'):
+                with open('usuarios.json', 'r') as f:
+                    usuarios = json.load(f)
+            else:
+                usuarios = {}
+            
+            # Lógica original do JSON
+            if email == 'tisaaceng@gmail.com' and senha == '4839AT81':
+                session['usuario_logado'] = email
+                session['is_admin'] = True
+                flash('Login de administrador bem-sucedido!', 'success')
+                return redirect(url_for('admin'))
+            
+            if email in usuarios and usuarios[email]['senha'] == senha:
+                if usuarios[email].get('aprovado', False):
+                    session['usuario_logado'] = email
+                    session['is_admin'] = False
+                    flash('Login bem-sucedido!', 'success')
+                    return redirect(url_for('painel'))
+                else:
+                    flash('Seu cadastro ainda não foi aprovado. Por favor, aguarde a aprovação do administrador.', 'warning')
+                    return redirect(url_for('login'))
+            else:
+                flash('Credenciais inválidas. Verifique seu email e senha.', 'danger')
+                return redirect(url_for('login'))
     return render_template('login.html')
 
 @app.route('/cadastro', methods=['GET', 'POST'])
@@ -56,60 +130,85 @@ def cadastro():
         nome = request.form['nome']
         email = request.form['email']
         senha = request.form['senha']
-        if os.path.exists('usuarios.json'):
-            with open('usuarios.json', 'r') as f:
-                usuarios = json.load(f)
+        
+        if USE_DATABASE:
+            # Verifica se o email já existe no banco
+            existing_user = Usuario.query.filter_by(email=email).first()
+            if existing_user:
+                flash('Este email já está cadastrado. Por favor, use outro.', 'warning')
+                return redirect(url_for('cadastro'))
+
+            new_user = Usuario(nome=nome, email=email, senha=senha, aprovado=False, is_admin=False)
+            db.session.add(new_user)
+            db.session.commit()
+            flash('Seu cadastro foi enviado para aprovação.', 'success')
+            return redirect(url_for('login'))
         else:
-            usuarios = {}
+            if os.path.exists('usuarios.json'):
+                with open('usuarios.json', 'r') as f:
+                    usuarios = json.load(f)
+            else:
+                usuarios = {}
 
-        if email in usuarios or email == 'tisaaceng@gmail.com':
-            flash('Este email já está cadastrado ou reservado. Por favor, use outro.')
-            return redirect(url_for('cadastro'))
+            if email in usuarios or email == 'tisaaceng@gmail.com':
+                flash('Este email já está cadastrado ou reservado. Por favor, use outro.', 'warning')
+                return redirect(url_for('cadastro'))
 
-        usuarios[email] = {'nome': nome, 'senha': senha, 'aprovado': False}
-        with open('usuarios.json', 'w') as f:
-            json.dump(usuarios, f, indent=4)
-
-        flash('Seu cadastro foi enviado para aprovação. Você será notificado por email quando for aprovado.')
-        return redirect(url_for('login'))
+            usuarios[email] = {'nome': nome, 'senha': senha, 'aprovado': False}
+            with open('usuarios.json', 'w') as f:
+                json.dump(usuarios, f, indent=4)
+            flash('Seu cadastro foi enviado para aprovação. Você será notificado por email quando for aprovado.', 'success')
+            return redirect(url_for('login'))
     return render_template('cadastro.html')
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
-    # Permite acesso somente se estiver logado como admin (email fixo + flag)
     if 'usuario_logado' not in session or session.get('is_admin') != True:
-        flash('Acesso negado. Apenas o administrador pode acessar esta página.')
+        flash('Acesso negado. Apenas o administrador pode acessar esta página.', 'danger')
         return redirect(url_for('login'))
 
     if request.method == 'POST':
         email_to_approve = request.form.get('email')
+        if USE_DATABASE:
+            user = Usuario.query.filter_by(email=email_to_approve).first()
+            if user:
+                user.aprovado = True
+                db.session.commit()
+                flash(f'Usuário {email_to_approve} aprovado com sucesso!', 'success')
+            else:
+                flash(f'Usuário {email_to_approve} não encontrado.', 'warning')
+        else:
+            if os.path.exists('usuarios.json'):
+                with open('usuarios.json', 'r') as f:
+                    usuarios = json.load(f)
+                if email_to_approve in usuarios:
+                    usuarios[email_to_approve]['aprovado'] = True
+                    with open('usuarios.json', 'w') as f:
+                        json.dump(usuarios, f, indent=4)
+                    flash(f'Usuário {email_to_approve} aprovado com sucesso!', 'success')
+                else:
+                    flash(f'Usuário {email_to_approve} não encontrado.', 'warning')
+            else:
+                flash('Arquivo de usuários não encontrado.', 'warning')
+
+    if USE_DATABASE:
+        nao_aprovados = Usuario.query.filter_by(aprovado=False, is_admin=False).all()
+        # Converte a lista de objetos para um dicionário para compatibilidade com o template
+        nao_aprovados_dict = {u.email: {'nome': u.nome} for u in nao_aprovados}
+        return render_template('admin.html', usuarios=nao_aprovados_dict)
+    else:
         if os.path.exists('usuarios.json'):
             with open('usuarios.json', 'r') as f:
                 usuarios = json.load(f)
-            if email_to_approve in usuarios:
-                usuarios[email_to_approve]['aprovado'] = True
-                with open('usuarios.json', 'w') as f:
-                    json.dump(usuarios, f, indent=4)
-                flash(f'Usuário {email_to_approve} aprovado com sucesso!')
-            else:
-                flash(f'Usuário {email_to_approve} não encontrado.')
+            nao_aprovados = {k: v for k, v in usuarios.items() if not v.get('aprovado', False)}
         else:
-            flash('Arquivo de usuários não encontrado.')
-
-    # Mostrar apenas usuários não aprovados
-    if os.path.exists('usuarios.json'):
-        with open('usuarios.json', 'r') as f:
-            usuarios = json.load(f)
-        nao_aprovados = {k: v for k, v in usuarios.items() if not v.get('aprovado', False)}
-    else:
-        nao_aprovados = {}
-
-    return render_template('admin.html', usuarios=nao_aprovados)
+            nao_aprovados = {}
+        return render_template('admin.html', usuarios=nao_aprovados)
 
 @app.route('/painel')
 def painel():
     if 'usuario_logado' not in session:
-        flash('Acesso negado. Por favor, faça login.')
+        flash('Acesso negado. Por favor, faça login.', 'danger')
         return redirect(url_for('login'))
     return render_template('painel.html')
 
@@ -117,32 +216,37 @@ def painel():
 def logout():
     session.pop('usuario_logado', None)
     session.pop('is_admin', None)
-    flash('Você foi desconectado com sucesso.')
+    flash('Você foi desconectado com sucesso.', 'success')
     return redirect(url_for('login'))
 
 @app.route('/simulador', methods=['GET', 'POST'])
 def simulador():
     if 'usuario_logado' not in session:
-        flash('Faça login para acessar o simulador.')
+        flash('Faça login para acessar o simulador.', 'warning')
         return redirect(url_for('login'))
 
     email = session['usuario_logado']
 
-    # Verificar se usuário está aprovado (exceto para o admin fixo)
-    if email != 'tisaaceng@gmail.com':
-        if os.path.exists('usuarios.json'):
-            with open('usuarios.json', 'r') as f:
-                usuarios = json.load(f)
-            if not usuarios.get(email, {}).get('aprovado', False):
-                flash('Seu cadastro ainda não foi aprovado para usar o simulador.')
-                return redirect(url_for('painel'))
-        else:
-            flash('Arquivo de usuários não encontrado. Não foi possível verificar o status de aprovação.')
-            return redirect(url_for('login'))
+    if USE_DATABASE:
+        user = Usuario.query.filter_by(email=email).first()
+        if not user or not user.aprovado:
+            flash('Seu cadastro ainda não foi aprovado para usar o simulador.', 'warning')
+            return redirect(url_for('painel'))
+    else:
+        if email != 'tisaaceng@gmail.com':
+            if os.path.exists('usuarios.json'):
+                with open('usuarios.json', 'r') as f:
+                    usuarios = json.load(f)
+                if not usuarios.get(email, {}).get('aprovado', False):
+                    flash('Seu cadastro ainda não foi aprovado para usar o simulador.', 'warning')
+                    return redirect(url_for('painel'))
+            else:
+                flash('Arquivo de usuários não encontrado. Não foi possível verificar o status de aprovação.', 'warning')
+                return redirect(url_for('login'))
 
     resultado = None
     error = None
-    warning = None # Nova variável para mensagens de aviso
+    warning = None
 
     if request.method == 'POST':
         edo = request.form.get('edo')
@@ -153,19 +257,17 @@ def simulador():
             error = "Por favor, preencha todos os campos da Equação Diferencial Ordinária, Variável de Entrada e Variável de Saída."
         else:
             try:
-                # Chama a função parse_edo, que agora retorna a FT numérica (ou None) e a flag simbólica
                 Ls_expr, FT, has_symbolic_coeffs = parse_edo(edo, entrada, saida)
                 ft_latex = ft_to_latex(Ls_expr)
                 
                 resultado = {
                     'ft_latex': ft_latex,
-                    'is_symbolic': has_symbolic_coeffs # Passa esta flag para o template
+                    'is_symbolic': has_symbolic_coeffs
                 }
 
                 if has_symbolic_coeffs:
                     warning = "A função de transferência contém coeficientes simbólicos. A análise numérica (resposta ao degrau, polos/zeros, sintonia PID, Tabela de Routh) não pode ser realizada. Por favor, forneça coeficientes numéricos para essas análises."
                 else:
-                    # Procede com a análise numérica apenas se não houver coeficientes simbólicos
                     t_open, y_open = resposta_degrau(FT)
                     L, T = estima_LT(t_open, y_open)
                     Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
@@ -173,12 +275,11 @@ def simulador():
                     mf = malha_fechada_tf(FT, pid)
                     t_closed, y_closed = resposta_degrau(mf)
 
-                    # Função auxiliar para converter TransferFunction do control para sympy.Expr
                     def tf_to_sympy_tf(tf_obj):
                         import sympy as sp
                         num = tf_obj.num[0][0]
                         den = tf_obj.den[0][0]
-                        s_sym = sp.symbols('s') # Usa um símbolo 's' local
+                        s_sym = sp.symbols('s')
                         num_poly = sum(coef * s_sym**(len(num)-i-1) for i, coef in enumerate(num))
                         den_poly = sum(coef * s_sym**(len(den)-i-1) for i, coef in enumerate(den))
                         return num_poly / den_poly
@@ -187,16 +288,13 @@ def simulador():
                     expr_pid = sp.simplify(tf_to_sympy_tf(pid))
                     expr_mf = sp.simplify(tf_to_sympy_tf(mf))
 
-                    # Salva os gráficos e obtém seus caminhos
                     img_resposta_aberta_path = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', deslocamento=0.0)
                     img_resposta_fechada_path = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', deslocamento=1.0)
                     img_pz_path = plot_polos_zeros(FT)
 
-                    # Prepara a tabela de Routh
                     den_coefs = flatten_and_convert(FT.den[0])
                     routh_table = tabela_routh(den_coefs)
 
-                    # Adiciona os resultados numéricos ao dicionário
                     resultado.update({
                         'pid_latex': sp.latex(expr_pid, mul_symbol='dot'),
                         'mf_latex': sp.latex(expr_mf, mul_symbol='dot'),
@@ -209,32 +307,37 @@ def simulador():
                         'routh_table': routh_table.tolist()
                     })
 
-            except ValueError as ve: # Captura erros de validação ou parsing
+            except ValueError as ve:
                 error = f"Erro de entrada ou processamento: {str(ve)}"
-            except Exception as e: # Captura outros erros inesperados
+            except Exception as e:
                 error = f"Ocorreu um erro inesperado: {str(e)}. Por favor, verifique a EDO e as variáveis."
     return render_template('simulador.html', resultado=resultado, error=error, warning=warning)
 
 @app.route('/perfil')
 def perfil():
     if 'usuario_logado' not in session:
-        flash('Faça login para acessar o perfil.')
+        flash('Faça login para acessar o perfil.', 'warning')
         return redirect(url_for('login'))
 
     email = session['usuario_logado']
-    if os.path.exists('usuarios.json'):
-        with open('usuarios.json', 'r') as f:
-            usuarios = json.load(f)
-    else:
-        usuarios = {}
 
-    usuario = usuarios.get(email)
+    if USE_DATABASE:
+        user = Usuario.query.filter_by(email=email).first()
+        usuario = {'nome': user.nome, 'email': user.email, 'aprovado': user.aprovado}
+    else:
+        if os.path.exists('usuarios.json'):
+            with open('usuarios.json', 'r') as f:
+                usuarios = json.load(f)
+        else:
+            usuarios = {}
+        usuario = usuarios.get(email)
+
     return render_template('perfil.html', usuario=usuario, email=email)
 
 @app.route('/alterar_senha', methods=['GET', 'POST'])
 def alterar_senha():
     if 'usuario_logado' not in session:
-        flash('Faça login para alterar a senha.')
+        flash('Faça login para alterar a senha.', 'warning')
         return redirect(url_for('login'))
 
     if request.method == 'POST':
@@ -243,37 +346,50 @@ def alterar_senha():
         confirmar_senha = request.form.get('confirmar_senha')
 
         email = session['usuario_logado']
-        if os.path.exists('usuarios.json'):
-            with open('usuarios.json', 'r') as f:
-                usuarios = json.load(f)
-        else:
-            usuarios = {}
-
-        if usuarios[email]['senha'] != senha_atual:
-            flash('Senha atual incorreta.')
-            return redirect(url_for('alterar_senha'))
-
-        if nova_senha != confirmar_senha:
-            flash('Nova senha e confirmação não conferem.')
-            return redirect(url_for('alterar_senha'))
         
-        if not nova_senha:
-            flash('A nova senha não pode ser vazia.')
-            return redirect(url_for('alterar_senha'))
+        if USE_DATABASE:
+            user = Usuario.query.filter_by(email=email).first()
+            if not user or user.senha != senha_atual:
+                flash('Senha atual incorreta.', 'danger')
+                return redirect(url_for('alterar_senha'))
+            
+            if nova_senha != confirmar_senha:
+                flash('Nova senha e confirmação não conferem.', 'danger')
+                return redirect(url_for('alterar_senha'))
 
-        usuarios[email]['senha'] = nova_senha
-        with open('usuarios.json', 'w') as f:
-            json.dump(usuarios, f, indent=4)
+            user.senha = nova_senha
+            db.session.commit()
+            flash('Senha alterada com sucesso.', 'success')
+            return redirect(url_for('perfil'))
+        else:
+            if os.path.exists('usuarios.json'):
+                with open('usuarios.json', 'r') as f:
+                    usuarios = json.load(f)
+            else:
+                usuarios = {}
+                
+            if usuarios[email]['senha'] != senha_atual:
+                flash('Senha atual incorreta.', 'danger')
+                return redirect(url_for('alterar_senha'))
 
-        flash('Senha alterada com sucesso.')
-        return redirect(url_for('perfil'))
+            if nova_senha != confirmar_senha:
+                flash('Nova senha e confirmação não conferem.', 'danger')
+                return redirect(url_for('alterar_senha'))
+            
+            if not nova_senha:
+                flash('A nova senha não pode ser vazia.', 'danger')
+                return redirect(url_for('alterar_senha'))
+
+            usuarios[email]['senha'] = nova_senha
+            with open('usuarios.json', 'w') as f:
+                json.dump(usuarios, f, indent=4)
+            flash('Senha alterada com sucesso.', 'success')
+            return redirect(url_for('perfil'))
 
     return render_template('alterar_senha.html')
 
 @app.route('/funcao_transferencia')
 def funcao_transferencia():
-    # Esta rota pode ser usada para exibir a FT de forma isolada, se necessário.
-    # Por enquanto, a FT é exibida diretamente no simulador.
     ft_latex = session.get('ft_latex', "Função de Transferência não disponível.")
     return render_template('transferencia.html', ft_latex=ft_latex)
 
