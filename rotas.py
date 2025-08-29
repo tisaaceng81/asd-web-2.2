@@ -1,4 +1,4 @@
-limport os
+import os
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -12,12 +12,10 @@ from funcoes_auxiliares import (
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sua_chave_secreta_padrao')
 
-# Configuração do Banco de Dados
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Modelo de Dados do Usuário
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
@@ -30,7 +28,6 @@ class User(db.Model):
     def __repr__(self):
         return f'<User {self.email}>'
 
-# Bloco para criar o banco de dados e o admin inicial
 with app.app_context():
     db.create_all()
     admin_email = 'tisaaceng@gmail.com'
@@ -47,8 +44,6 @@ with app.app_context():
         db.session.add(new_admin)
         db.session.commit()
         print("Usuário administrador adicionado ao banco de dados.")
-
-# === ROTAS ===
 
 @app.route('/')
 def home():
@@ -125,7 +120,6 @@ def admin():
                 db.session.commit()
                 flash(f'Usuário {user.email} aprovado com sucesso!', 'success')
             elif action == 'excluir':
-                # Previne que o próprio administrador se exclua
                 if user.is_admin:
                     flash('Você não pode excluir a sua própria conta de administrador.', 'danger')
                 else:
@@ -291,6 +285,7 @@ def funcao_transferencia():
     ft_latex = session.get('ft_latex', "Função de Transferência não disponível.")
     is_admin = session.get('is_admin', False)
     return render_template('transferencia.html', ft_latex=ft_latex, is_admin=is_admin)
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5050))
