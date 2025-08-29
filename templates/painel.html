@@ -8,24 +8,23 @@
     body {
         font-family: Arial, sans-serif;
         background-color: #f0f2f5;
-        margin: 0; /* Removido para navbar fixa */
-        padding: 0; /* Removido para navbar fixa */
+        margin: 0;
+        padding: 0;
         display: flex;
-        flex-direction: column; /* Adicionado para layout com navbar fixa */
+        flex-direction: column;
         min-height: 100vh;
     }
-    /* Estilos da barra de navegação (navbar) */
     .navbar {
         background-color: #333;
         overflow: hidden;
         width: 100%;
-        position: fixed; /* Navbar fixa no topo */
+        position: fixed;
         top: 0;
         left: 0;
         z-index: 1000;
         border-radius: 0;
-        display: flex; /* Para alinhar itens */
-        justify-content: flex-start; /* Alinha itens à esquerda por padrão */
+        display: flex;
+        justify-content: flex-start;
         align-items: center;
         padding: 0 10px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.2);
@@ -43,73 +42,53 @@
         color: black;
     }
     .navbar a.right {
-        margin-left: auto; /* Empurra os itens para a direita */
+        margin-left: auto;
     }
-    /* Conteúdo principal da página */
     .content-wrapper {
-        flex-grow: 1; /* Permite que o wrapper ocupe o espaço restante */
+        padding-top: 70px;
+        flex-grow: 1;
         display: flex;
-        flex-direction: column;
         justify-content: center;
         align-items: center;
-        margin-top: 70px; /* Espaço para a navbar fixa */
-        padding: 20px;
+        text-align: center;
     }
     .content {
+        background-color: white;
+        padding: 40px;
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         max-width: 800px;
-        width: 100%; /* Garante que o conteúdo ocupe a largura disponível no wrapper */
-        background: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        text-align: center;
+        margin: 20px;
     }
     h1 {
-        text-align: center;
-        margin-bottom: 30px;
-        color: #333; /* Cor consistente */
-    }
-    p {
-        color: #666;
-    }
-    .logout-button {
-        margin-top: 20px;
-        background-color: #dc3545;
-        border: none;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 5px;
-        cursor: pointer;
-        font-size: 16px;
-        text-decoration: none;
-        display: inline-block;
-        transition: background-color 0.3s ease; /* Transição para hover */
-    }
-    .logout-button:hover {
-        background-color: #a71d2a;
+        color: #333;
+        font-size: 2em;
     }
     .option-button {
+        display: inline-block;
+        padding: 15px 30px;
         margin: 10px;
-        padding: 10px 20px;
-        border-radius: 5px;
+        background-color: #007bff;
         color: white;
         text-decoration: none;
-        font-size: 16px;
-        display: inline-block;
-        transition: opacity 0.3s ease, background-color 0.3s ease; /* Transição para hover */
+        border-radius: 5px;
+        transition: background-color 0.3s ease;
+        font-weight: bold;
     }
-    .perfil { background-color: #007bff; }
-    .senha { background-color: #17a2b8; }
-    .sim { background-color: #6c757d; }
     .option-button:hover {
-        opacity: 0.9;
+        background-color: #0056b3;
     }
-    /* Estilos para mensagens flash */
+    .option-button.perfil { background-color: #28a745; }
+    .option-button.perfil:hover { background-color: #218838; }
+    .option-button.senha { background-color: #ffc107; color: #333; }
+    .option-button.senha:hover { background-color: #e0a800; }
+    .option-button.simulador { background-color: #17a2b8; }
+    .option-button.simulador:hover { background-color: #138496; }
     .messages {
         list-style-type: none;
         padding: 0;
         text-align: center;
-        margin-bottom: 20px;
+        margin-top: 20px;
     }
     .messages li {
         padding: 10px;
@@ -132,7 +111,8 @@
         <a href="{{ url_for('painel') }}">Painel</a>
         <a href="{{ url_for('simulador') }}">Simulador</a>
         <a href="{{ url_for('perfil') }}">Perfil</a>
-        {% if admin %} <a href="{{ url_for('admin') }}">Admin</a>
+        {% if is_admin %}
+            <a href="{{ url_for('admin') }}">Admin</a>
         {% endif %}
         <a href="{{ url_for('logout') }}" class="right">Sair</a>
     </div>
@@ -153,12 +133,10 @@
             <p>Aqui você poderá acessar as funcionalidades do sistema.</p>
 
             <div style="margin-top: 20px;">
+                <a href="{{ url_for('simulador') }}" class="option-button simulador">Simulador</a>
                 <a href="{{ url_for('perfil') }}" class="option-button perfil">Perfil</a>
                 <a href="{{ url_for('alterar_senha') }}" class="option-button senha">Alterar Senha</a>
-                <a href="{{ url_for('simulador') }}" class="option-button sim">Simulador</a>
             </div>
-
-            <a href="{{ url_for('logout') }}" class="logout-button">Sair</a>
         </div>
     </div>
 </body>
