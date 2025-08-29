@@ -14,28 +14,27 @@
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 0; /* Removido padding-bottom padrão para navbar fixa */
-            background-color: #f4f4f4; /* Cor de fundo consistente */
+            padding: 0;
+            background-color: #f4f4f4;
             display: flex;
-            flex-direction: column; /* Para layout com navbar fixa no topo */
-            min-height: 100vh; /* Garante que o body ocupe a altura total da viewport */
+            flex-direction: column;
+            min-height: 100vh;
         }
 
-        /* Navbar estilo unificado */
         .navbar {
-            background-color: #333; /* Cor de fundo escura */
+            background-color: #333;
             overflow: hidden;
             width: 100%;
-            position: fixed; /* Navbar fixa no topo */
+            position: fixed;
             top: 0;
             left: 0;
-            z-index: 1000; /* Garante que a navbar fique acima de outros elementos */
-            border-radius: 0; /* Remove bordas arredondadas para navbar fixa */
-            display: flex; /* Flexbox para alinhar itens */
-            justify-content: flex-start; /* Alinha itens à esquerda por padrão */
-            align-items: center; /* Centraliza verticalmente */
-            padding: 0 10px; /* Pequeno padding nas laterais */
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2); /* Sombra para destaque */
+            z-index: 1000;
+            border-radius: 0;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            padding: 0 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
 
         .navbar a {
@@ -44,92 +43,60 @@
             text-align: center;
             padding: 14px 16px;
             text-decoration: none;
-            transition: background-color 0.3s ease, color 0.3s ease; /* Transição suave */
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
 
         .navbar a:hover {
-            background-color: #ddd;
-            color: black;
+            background-color: #575757;
+            color: white;
         }
 
-        .navbar .right {
-            margin-left: auto; /* Empurra os itens à direita para o final */
+        .navbar a.right {
+            margin-left: auto;
         }
 
-        /* Estilos para o conteúdo abaixo da navbar fixa */
         .content-offset {
-            padding-top: 70px; /* Ajusta conforme a altura da sua navbar (~50px + margem) */
-            flex-grow: 1; /* Permite que o conteúdo principal ocupe o espaço restante */
-            width: 100%; /* Garante que o conteúdo ocupe a largura total */
-            display: flex; /* Torna flexível para centralizar o wrapper */
-            flex-direction: column; /* Organiza itens verticalmente */
-            justify-content: center; /* Centraliza o wrapper verticalmente */
-            align-items: center; /* Centraliza o wrapper horizontalmente */
+            padding-top: 54px; /* Altura da navbar + 10px de margem */
+            flex-grow: 1; /* Faz o conteúdo principal preencher o espaço restante */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
         }
 
         .main-content-wrapper {
-            max-width: 900px; /* Largura máxima para o conteúdo principal */
-            width: 90%; /* Use porcentagem para melhor responsividade */
-            padding: 20px; /* Padding interno */
-            background-color: #fff; /* Fundo branco para o conteúdo */
+            background-color: white;
+            padding: 40px;
             border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            text-align: center;
-            flex-grow: 1; /* Permite que o wrapper se expanda verticalmente */
-            display: flex; /* Torna o wrapper flexível */
-            flex-direction: column; /* Organiza os itens (h1, img) verticalmente */
-            justify-content: center; /* Centraliza h1 e img verticalmente */
-            align-items: center; /* Centraliza h1 e img horizontalmente */
-            /* A min-height dinâmica calcula o espaço entre navbar e footer */
-            min-height: calc(100vh - 70px - 60px); /* 100vh - altura da navbar - altura estimada do footer */
-            box-sizing: border-box; /* Inclui padding na min-height */
-        }
-
-        .logo {
-            display: block;
-            margin: 20px auto; /* Margem reduzida para dar mais espaço à imagem */
-            width: auto; /* Permite que a largura se ajuste proporcionalmente */
-            max-width: 80%; /* Limita a largura para não ser muito grande */
-            height: auto; /* Mantém a proporção da imagem */
-            flex-grow: 1; /* Permite que a imagem se estique verticalmente dentro do wrapper */
-            object-fit: contain; /* Garante que a imagem se ajuste sem cortar ou distorcer */
-            max-height: calc(100% - 40px); /* Limita a altura máxima do logo dentro do wrapper, considerando as margens */
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            max-width: 800px;
+            margin: 20px;
         }
 
         h1 {
-            margin-top: 0; /* Remove margem superior se usar flex para centralização */
-            margin-bottom: 20px; /* Espaço abaixo do título */
             color: #333;
+            font-size: 2.5em;
+            margin-bottom: 20px;
         }
 
-        footer {
-            text-align: center;
-            font-size: small;
-            color: gray;
-            padding: 20px; /* Mais padding para melhor visualização */
-            background-color: #f9f9f9;
-            margin-top: auto; /* Empurra o footer para o final se o conteúdo for curto */
-            width: 100%; /* Ocupa a largura total */
-            box-sizing: border-box; /* Inclui padding na largura total */
+        p {
+            color: #666;
+            line-height: 1.6;
         }
-
-        /* Estilos para mensagens flash */
+        
         .messages {
             list-style-type: none;
-            padding: 0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
             text-align: center;
-            margin-bottom: 20px;
-            margin-top: 20px; /* Ajuste para espaçamento após o título se o wrapper não for usado */
         }
         .messages li {
-            padding: 10px;
-            margin-bottom: 5px;
+            padding: 8px 15px;
             border-radius: 5px;
+            margin-bottom: 5px;
             font-weight: bold;
-            display: block;
-            margin-left: auto;
-            margin-right: auto;
-            max-width: 800px;
         }
         .messages .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .messages .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
@@ -141,13 +108,15 @@
 
     <div class="navbar">
         <a href="{{ url_for('home') }}">Home</a>
-        <a href="{{ url_for('login') }}">Login</a>
-        <a href="{{ url_for('cadastro') }}">Cadastro</a>
-        {% if admin %} <a href="{{ url_for('admin') }}">Admin</a>
-        {% endif %}
-        {% if user_email %} <a href="{{ url_for('painel') }}">Painel</a>
+        {% if is_logged_in %}
             <a href="{{ url_for('perfil') }}">Perfil</a>
             <a href="{{ url_for('logout') }}" class="right">Sair</a>
+        {% else %}
+            <a href="{{ url_for('login') }}">Login</a>
+            <a href="{{ url_for('cadastro') }}">Cadastro</a>
+        {% endif %}
+        {% if is_admin %}
+            <a href="{{ url_for('admin') }}">Admin</a>
         {% endif %}
     </div>
 
@@ -163,13 +132,10 @@
 
     <div class="content-offset">
         <div class="main-content-wrapper">
-            <h1>Analisador de Sistemas Dinâmicos</h1>
-            <img src="{{ url_for('static', filename='logo.jpg') }}" alt="Logo Automação e Controle" class="logo">
+            <h1>Bem-vindo ao Analisador de Sistemas Dinâmicos</h1>
+            <p>Seu assistente para resolver Equações Diferenciais Ordinárias (EDOs) e analisar sistemas de controle. Faça o login para acessar o simulador e outras ferramentas exclusivas.</p>
         </div>
     </div>
 
-    <footer>
-        Desenvolvido por Tiago Carneiro
-    </footer>
 </body>
 </html>
