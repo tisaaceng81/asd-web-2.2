@@ -4,3 +4,6 @@ numpy==1.26.4
 sympy==1.12
 control==0.9.4
 gunicorn
+Flask-SQLAlchemy
+psycopg2-binary
+python-dotenv
