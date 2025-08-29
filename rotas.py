@@ -54,8 +54,9 @@ else:
 
 @app.route('/')
 def home():
-    user_email = session.get('usuario_logado')
-    return render_template('index.html', user_email=user_email)
+    is_logged_in = 'usuario_logado' in session
+    is_admin = session.get('is_admin', False)
+    return render_template('index.html', is_logged_in=is_logged_in, is_admin=is_admin)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -66,9 +67,14 @@ def login():
         if USE_DATABASE:
             user = Usuario.query.filter_by(email=email).first()
             if user and user.senha == senha:
-                if user.aprovado:
+                if user.is_admin:
                     session['usuario_logado'] = user.email
-                    session['is_admin'] = user.is_admin
+                    session['is_admin'] = True
+                    flash('Login de administrador bem-sucedido!', 'success')
+                    return redirect(url_for('admin'))
+                elif user.aprovado:
+                    session['usuario_logado'] = user.email
+                    session['is_admin'] = False
                     flash('Login bem-sucedido!', 'success')
                     return redirect(url_for('painel'))
                 else:
@@ -102,7 +108,7 @@ def login():
             else:
                 flash('Credenciais inválidas. Verifique seu email e senha.', 'danger')
                 return redirect(url_for('login'))
-    return render_template('login.html')
+    return render_template('login.html', is_logged_in=False, is_admin=False)
 
 @app.route('/cadastro', methods=['GET', 'POST'])
 def cadastro():
@@ -138,7 +144,7 @@ def cadastro():
                 json.dump(usuarios, f, indent=4)
             flash('Seu cadastro foi enviado para aprovação. Você será notificado por email quando for aprovado.', 'success')
             return redirect(url_for('login'))
-    return render_template('cadastro.html')
+    return render_template('cadastro.html', is_logged_in=False, is_admin=False)
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
@@ -148,7 +154,7 @@ def admin():
 
     if request.method == 'POST':
         email_to_process = request.form.get('email')
-        action = request.form.get('action') # Lógica para lidar com os botões
+        action = request.form.get('action')
 
         if USE_DATABASE:
             user = Usuario.query.filter_by(email=email_to_process).first()
@@ -190,14 +196,17 @@ def admin():
         else:
             nao_aprovados_dict = {}
 
-    return render_template('admin.html', usuarios=nao_aprovados_dict)
+    return render_template('admin.html', usuarios=nao_aprovados_dict, is_admin=True)
 
 @app.route('/painel')
 def painel():
-    if 'usuario_logado' not in session:
-        flash('Acesso negado. Por favor, faça login.', 'danger')
+    if 'usuario_logado' not in session or session.get('is_admin') == True:
+        flash('Acesso negado. Por favor, faça login com uma conta de usuário.', 'danger')
         return redirect(url_for('login'))
-    return render_template('painel.html')
+    
+    is_logged_in = 'usuario_logado' in session
+    is_admin = session.get('is_admin', False)
+    return render_template('painel.html', is_logged_in=is_logged_in, is_admin=is_admin)
 
 @app.route('/logout')
 def logout():
@@ -298,7 +307,10 @@ def simulador():
                 error = f"Erro de entrada ou processamento: {str(ve)}"
             except Exception as e:
                 error = f"Ocorreu um erro inesperado: {str(e)}. Por favor, verifique a EDO e as variáveis."
-    return render_template('simulador.html', resultado=resultado, error=error, warning=warning)
+    
+    is_logged_in = 'usuario_logado' in session
+    is_admin = session.get('is_admin', False)
+    return render_template('simulador.html', resultado=resultado, error=error, warning=warning, is_logged_in=is_logged_in, is_admin=is_admin)
 
 @app.route('/perfil')
 def perfil():
@@ -310,7 +322,7 @@ def perfil():
 
     if USE_DATABASE:
         user = Usuario.query.filter_by(email=email).first()
-        usuario = {'nome': user.nome, 'email': user.email, 'aprovado': user.aprovado}
+        usuario = {'nome': user.nome, 'email': user.email, 'aprovado': user.aprovado, 'is_admin': user.is_admin}
     else:
         if os.path.exists('usuarios.json'):
             with open('usuarios.json', 'r') as f:
@@ -318,8 +330,11 @@ def perfil():
         else:
             usuarios = {}
         usuario = usuarios.get(email)
+        usuario['is_admin'] = (email == 'tisaaceng@gmail.com')
 
-    return render_template('perfil.html', usuario=usuario, email=email)
+    is_logged_in = 'usuario_logado' in session
+    is_admin = session.get('is_admin', False)
+    return render_template('perfil.html', usuario=usuario, email=email, is_logged_in=is_logged_in, is_admin=is_admin)
 
 @app.route('/alterar_senha', methods=['GET', 'POST'])
 def alterar_senha():
@@ -373,12 +388,16 @@ def alterar_senha():
             flash('Senha alterada com sucesso.', 'success')
             return redirect(url_for('perfil'))
 
-    return render_template('alterar_senha.html')
+    is_logged_in = 'usuario_logado' in session
+    is_admin = session.get('is_admin', False)
+    return render_template('alterar_senha.html', is_logged_in=is_logged_in, is_admin=is_admin)
 
 @app.route('/funcao_transferencia')
 def funcao_transferencia():
     ft_latex = session.get('ft_latex', "Função de Transferência não disponível.")
-    return render_template('transferencia.html', ft_latex=ft_latex)
+    is_logged_in = 'usuario_logado' in session
+    is_admin = session.get('is_admin', False)
+    return render_template('transferencia.html', ft_latex=ft_latex, is_logged_in=is_logged_in, is_admin=is_admin)
 
 
 # === EXECUÇÃO PRINCIPAL ===
