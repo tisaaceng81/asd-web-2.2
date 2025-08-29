@@ -1,4 +1,4 @@
-import os
+limport os
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -125,15 +125,20 @@ def admin():
                 db.session.commit()
                 flash(f'Usuário {user.email} aprovado com sucesso!', 'success')
             elif action == 'excluir':
-                db.session.delete(user)
-                db.session.commit()
-                flash(f'Usuário {user.email} excluído com sucesso.', 'success')
+                # Previne que o próprio administrador se exclua
+                if user.is_admin:
+                    flash('Você não pode excluir a sua própria conta de administrador.', 'danger')
+                else:
+                    db.session.delete(user)
+                    db.session.commit()
+                    flash(f'Usuário {user.email} excluído com sucesso.', 'success')
         else:
             flash(f'Usuário {email_to_process} não encontrado.', 'warning')
 
     nao_aprovados = User.query.filter_by(aprovado=False, is_admin=False).all()
-    nao_aprovados_dict = {user.email: {'nome': user.nome} for user in nao_aprovados}
-    return render_template('admin.html', usuarios=nao_aprovados_dict, is_admin=session.get('is_admin'))
+    aprovados = User.query.filter_by(aprovado=True, is_admin=False).all()
+    
+    return render_template('admin.html', nao_aprovados=nao_aprovados, aprovados=aprovados, is_admin=session.get('is_admin'))
 
 @app.route('/painel')
 def painel():
@@ -287,8 +292,6 @@ def funcao_transferencia():
     is_admin = session.get('is_admin', False)
     return render_template('transferencia.html', ft_latex=ft_latex, is_admin=is_admin)
 
-
-# === EXECUÇÃO PRINCIPAL ===
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5050))
     app.run(host='0.0.0.0', port=port, debug=True)
