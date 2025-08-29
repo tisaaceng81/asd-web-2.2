@@ -9,13 +9,14 @@
             font-family: Arial, sans-serif;
             background-color: #f9f9f9;
             padding: 20px;
-            margin: 0;
+            margin: 0; /* Adicionado para garantir que não haja margem padrão */
         }
         h1 {
             text-align: center;
             margin-bottom: 30px;
-            color: #333;
+            color: #333; /* Adicionado cor para consistência */
         }
+        /* Estilos da barra de navegação */
         .navbar {
             background-color: #333;
             overflow: hidden;
@@ -37,10 +38,11 @@
         .navbar a.right {
             float: right;
         }
+        /* Ajuste de margem para o conteúdo principal */
         .content-container {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
+            max-width: 900px; /* Alinhado com outros templates se desejar */
+            margin: 0 auto; /* Centraliza o conteúdo */
+            padding: 20px; /* Espaçamento interno */
         }
         .user-list {
             max-width: 600px;
@@ -53,7 +55,7 @@
         .user-item {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: center; /* Alinha itens verticalmente no centro */
             padding: 10px 0;
             border-bottom: 1px solid #ddd;
         }
@@ -71,11 +73,12 @@
             border-radius: 5px;
             cursor: pointer;
             font-size: 14px;
-            transition: background-color 0.3s ease;
+            transition: background-color 0.3s ease; /* Adicionado transição */
         }
         button:hover {
             background-color: #218838;
         }
+        /* Estilos para mensagens flash (revisados para categorias) */
         .messages {
             list-style-type: none;
             padding: 0;
@@ -90,7 +93,7 @@
             display: block;
             margin-left: auto;
             margin-right: auto;
-            max-width: 800px;
+            max-width: 800px; /* Para as mensagens flash não serem muito largas */
         }
         .messages .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .messages .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
@@ -101,6 +104,9 @@
 <body>
     <div class="navbar">
         <a href="{{ url_for('admin') }}">Painel Admin</a>
+        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('simulador') }}">Simulador</a>
+        <a href="{{ url_for('perfil') }}">Perfil</a>
         <a href="{{ url_for('logout') }}" class="right">Sair</a>
     </div>
 
@@ -124,8 +130,7 @@
                         <span>{{ dados['nome'] }} ({{ email }})</span>
                         <form method="POST" action="{{ url_for('admin') }}">
                             <input type="hidden" name="email" value="{{ email }}" />
-                            <button type="submit" name="action" value="aprovar">Aprovar</button>
-                            <button type="submit" name="action" value="excluir" style="background-color: #dc3545;">Excluir</button>
+                            <button type="submit">Aprovar</button>
                         </form>
                     </div>
                 {% endfor %}
