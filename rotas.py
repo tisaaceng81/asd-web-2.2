@@ -2,7 +2,6 @@ import os
 import json
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 
-# NOVO: Importações para o banco de dados
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 
@@ -12,14 +11,11 @@ from funcoes_auxiliares import (
     flatten_and_convert, tabela_routh
 )
 
-# NOVO: Carregar variáveis de ambiente
 load_dotenv()
 
 app = Flask(__name__)
-# NOVO: Use a variável de ambiente para a chave secreta
 app.secret_key = os.environ.get('SECRET_KEY', 'sua_chave_secreta_segura')
 
-# NOVO: Lógica de seleção do banco de dados
 USE_DATABASE = os.environ.get('DATABASE_URL') is not None
 
 if USE_DATABASE:
@@ -27,7 +23,6 @@ if USE_DATABASE:
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db = SQLAlchemy(app)
 
-    # NOVO: Modelo de dados para a tabela de usuários
     class Usuario(db.Model):
         __tablename__ = 'usuarios'
         id = db.Column(db.Integer, primary_key=True)
@@ -37,39 +32,25 @@ if USE_DATABASE:
         aprovado = db.Column(db.Boolean, default=False)
         is_admin = db.Column(db.Boolean, default=False)
 
-    # NOVO: Função para inicializar o banco de dados e o admin
     def inicializar_banco():
         with app.app_context():
             db.create_all()
-            # Verificar se o admin fixo já existe
             admin_user = Usuario.query.filter_by(email='tisaaceng@gmail.com').first()
             if not admin_user:
-                admin_data = {
-                    "nome": "Tiago Carneiro",
-                    "senha": "4839AT81",
-                    "aprovado": True,
-                    "is_admin": True
-                }
                 new_admin = Usuario(
-                    nome=admin_data['nome'],
+                    nome="Tiago Carneiro",
                     email='tisaaceng@gmail.com',
-                    senha=admin_data['senha'],
-                    aprovado=admin_data['aprovado'],
-                    is_admin=admin_data['is_admin']
+                    senha="4839AT81",
+                    aprovado=True,
+                    is_admin=True
                 )
                 db.session.add(new_admin)
                 db.session.commit()
     
-    # NOVO: Inicializa o banco de dados no momento da execução
-    # CORREÇÃO: Movido para fora do if __name__ == '__main__':
     inicializar_banco()
 
 else:
-    # A lógica original do JSON permanece
-    # Removido: A leitura de 'usuarios.json' foi movida para as rotas
     pass
-
-# === ROTAS ===
 
 @app.route('/')
 def home():
@@ -103,7 +84,6 @@ def login():
             else:
                 usuarios = {}
             
-            # Lógica original do JSON
             if email == 'tisaaceng@gmail.com' and senha == '4839AT81':
                 session['usuario_logado'] = email
                 session['is_admin'] = True
@@ -132,7 +112,6 @@ def cadastro():
         senha = request.form['senha']
         
         if USE_DATABASE:
-            # Verifica se o email já existe no banco
             existing_user = Usuario.query.filter_by(email=email).first()
             if existing_user:
                 flash('Este email já está cadastrado. Por favor, use outro.', 'warning')
@@ -168,42 +147,50 @@ def admin():
         return redirect(url_for('login'))
 
     if request.method == 'POST':
-        email_to_approve = request.form.get('email')
+        email_to_process = request.form.get('email')
+        action = request.form.get('action') # Lógica para lidar com os botões
+
         if USE_DATABASE:
-            user = Usuario.query.filter_by(email=email_to_approve).first()
+            user = Usuario.query.filter_by(email=email_to_process).first()
             if user:
-                user.aprovado = True
-                db.session.commit()
-                flash(f'Usuário {email_to_approve} aprovado com sucesso!', 'success')
+                if action == 'aprovar':
+                    user.aprovado = True
+                    db.session.commit()
+                    flash(f'Usuário {email_to_process} aprovado com sucesso!', 'success')
+                elif action == 'excluir':
+                    db.session.delete(user)
+                    db.session.commit()
+                    flash(f'Usuário {email_to_process} excluído com sucesso.', 'success')
             else:
-                flash(f'Usuário {email_to_approve} não encontrado.', 'warning')
+                flash(f'Usuário {email_to_process} não encontrado.', 'warning')
         else:
             if os.path.exists('usuarios.json'):
                 with open('usuarios.json', 'r') as f:
                     usuarios = json.load(f)
-                if email_to_approve in usuarios:
-                    usuarios[email_to_approve]['aprovado'] = True
+                if email_to_process in usuarios:
+                    if action == 'aprovar':
+                        usuarios[email_to_process]['aprovado'] = True
+                        flash(f'Usuário {email_to_process} aprovado com sucesso!', 'success')
+                    elif action == 'excluir':
+                        del usuarios[email_to_process]
+                        flash(f'Usuário {email_to_process} excluído com sucesso.', 'success')
                     with open('usuarios.json', 'w') as f:
                         json.dump(usuarios, f, indent=4)
-                    flash(f'Usuário {email_to_approve} aprovado com sucesso!', 'success')
                 else:
-                    flash(f'Usuário {email_to_approve} não encontrado.', 'warning')
-            else:
-                flash('Arquivo de usuários não encontrado.', 'warning')
+                    flash(f'Usuário {email_to_process} não encontrado.', 'warning')
 
     if USE_DATABASE:
         nao_aprovados = Usuario.query.filter_by(aprovado=False, is_admin=False).all()
-        # Converte a lista de objetos para um dicionário para compatibilidade com o template
-        nao_aprovados_dict = {u.email: {'nome': u.nome} for u in nao_aprovados}
-        return render_template('admin.html', usuarios=nao_aprovados_dict)
+        nao_aprovados_dict = {u.email: {'nome': u.nome, 'email': u.email} for u in nao_aprovados}
     else:
         if os.path.exists('usuarios.json'):
             with open('usuarios.json', 'r') as f:
                 usuarios = json.load(f)
-            nao_aprovados = {k: v for k, v in usuarios.items() if not v.get('aprovado', False)}
+            nao_aprovados_dict = {k: v for k, v in usuarios.items() if not v.get('aprovado', False)}
         else:
-            nao_aprovados = {}
-        return render_template('admin.html', usuarios=nao_aprovados)
+            nao_aprovados_dict = {}
+
+    return render_template('admin.html', usuarios=nao_aprovados_dict)
 
 @app.route('/painel')
 def painel():
