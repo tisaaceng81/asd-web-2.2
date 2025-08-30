@@ -27,7 +27,7 @@ def pad_coeffs(num_coeffs, den_coeffs):
     return num_coeffs, den_coeffs
 
 def parse_edo(edo_str, entrada_str, saida_str):
-    t = sp.symbols('t', real=True)
+    t, s = sp.symbols('t s', real=True)
     X_func = sp.Function(saida_str)
     F_func = sp.Function(entrada_str)
 
@@ -37,8 +37,10 @@ def parse_edo(edo_str, entrada_str, saida_str):
     lhs, rhs = eq_str.split('=')
     eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
-    potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
     local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func}
+    
+    # Use re.findall para encontrar todas as variáveis simbólicas no resto da string
+    potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
     excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
     for sym in potential_symbols:
         if sym not in excluded and sym not in local_dict:
@@ -46,23 +48,24 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     eq = sp.sympify(eq_str, locals=local_dict)
 
-    lhs_expr = sp.sympify(lhs.strip(), locals=local_dict)
-    if not lhs_expr.has(X_func(t)):
-        raise ValueError(f"Lado esquerdo da EDO deve conter a variável de saída '{saida_str}(t)'.")
-
     Xs = sp.Symbol(f'{saida_str}s')
     Fs = sp.Symbol(f'{entrada_str}s')
 
-    expr_laplace = eq
-    for d in expr_laplace.atoms(sp.Derivative):
-        order = d.derivative_count
-        func_expr = d.expr
-        if func_expr.func == X_func:
-            expr_laplace = expr_laplace.subs(d, sp.Pow(sp.Symbol('s'), order) * Xs)
-        elif func_expr.func == F_func:
-            expr_laplace = expr_laplace.subs(d, sp.Pow(sp.Symbol('s'), order) * Fs)
-
-    expr_laplace = expr_laplace.subs({X_func(t): Xs, F_func(t): Fs})
+    # Correção: Substituir funções e suas derivadas em um único passo
+    replacements = {}
+    for expr in eq.atoms():
+        if isinstance(expr, sp.Derivative) and expr.expr.func == X_func:
+            order = expr.derivative_count
+            replacements[expr] = s**order * Xs
+        elif isinstance(expr, sp.Derivative) and expr.expr.func == F_func:
+            order = expr.derivative_count
+            replacements[expr] = s**order * Fs
+        elif expr.func == X_func:
+            replacements[expr] = Xs
+        elif expr.func == F_func:
+            replacements[expr] = Fs
+    
+    expr_laplace = eq.subs(replacements)
 
     collected_expr = sp.collect(expr_laplace, [Xs, Fs])
     coef_Xs = collected_expr.coeff(Xs)
@@ -75,13 +78,13 @@ def parse_edo(edo_str, entrada_str, saida_str):
     Ls_expr = sp.simplify(Ls_expr)
 
     num, den = sp.fraction(Ls_expr)
-    num_poly_expr = sp.collect(num, sp.Symbol('s'))
-    den_poly_expr = sp.collect(den, sp.Symbol('s'))
-
+    num_poly_expr = sp.collect(num, s)
+    den_poly_expr = sp.collect(den, s)
+    
     has_symbolic = False
     try:
-        num_poly = sp.Poly(num_poly_expr, sp.Symbol('s'))
-        den_poly = sp.Poly(den_poly_expr, sp.Symbol('s'))
+        num_poly = sp.Poly(num_poly_expr, s)
+        den_poly = sp.Poly(den_poly_expr, s)
         for c in num_poly.all_coeffs() + den_poly.all_coeffs():
             if not c.is_number:
                 has_symbolic = True
@@ -130,7 +133,6 @@ def estima_LT(t, y):
 def sintonia_ziegler_nichols(L, T):
     if L == 0:
         L = 0.01
-    # Mantém a lógica da sintonia de Ziegler-Nichols do seu código original.
     Kp = 1.2 * T / L
     Ti = 2 * L
     Td = 0.5 * L
