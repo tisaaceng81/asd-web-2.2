@@ -5,7 +5,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from funcoes_auxiliares import (
     parse_edo, ft_to_latex, resposta_degrau, estima_LT, sintonia_ziegler_nichols,
-    sintonia_oscilacao_forcada, calcula_kc_tc, cria_pid_tf, malha_fechada_tf, salvar_grafico_resposta,
+    sintonia_oscilacao_forcada, cria_pid_tf, malha_fechada_tf, salvar_grafico_resposta,
     plot_polos_zeros, flatten_and_convert, tabela_routh
 )
 
@@ -165,14 +165,14 @@ def simulador():
 
     resultado = None
     error = None
-    
+    warning = None
+
     if request.method == 'POST':
         edo = request.form.get('edo')
         entrada = request.form.get('entrada')
         saida = request.form.get('saida')
         metodo_sintonia = request.form.get('metodo_sintonia')
-        calcula_auto = 'calcula_auto' in request.form
-        
+
         if not edo or not entrada or not saida:
             error = "Por favor, preencha todos os campos da Equação Diferencial Ordinária, Variável de Entrada e Variável de Saída."
         else:
@@ -183,12 +183,11 @@ def simulador():
                 resultado = {
                     'ft_latex': ft_latex,
                     'is_symbolic': has_symbolic_coeffs,
-                    'method': metodo_sintonia,
-                    'automatico': calcula_auto
+                    'method': metodo_sintonia
                 }
 
                 if has_symbolic_coeffs:
-                    pass
+                    warning = "A função de transferência contém coeficientes simbólicos. A análise numérica (resposta ao degrau, polos/zeros, sintonia PID, Tabela de Routh) não pode ser realizada. Por favor, forneça coeficientes numéricos para essas análises."
                 else:
                     Kp, Ki, Kd = 0, 0, 0
                     img_resposta_aberta_path = None
@@ -199,15 +198,9 @@ def simulador():
                         Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
                         img_resposta_aberta_path = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', deslocamento=0.0)
                     elif metodo_sintonia == 'oscilacao':
-                        if calcula_auto:
-                            Kc, Tc = calcula_kc_tc(FT)
-                            resultado['Kc'] = Kc
-                            resultado['Tc'] = Tc
-                        else:
-                            kc = float(request.form.get('kc'))
-                            tc = float(request.form.get('tc'))
-                            Kc, Tc = kc, tc
-                        Kp, Ki, Kd = sintonia_oscilacao_forcada(Kc, Tc)
+                        kc = float(request.form.get('kc'))
+                        tc = float(request.form.get('tc'))
+                        Kp, Ki, Kd = sintonia_oscilacao_forcada(kc, tc)
                     else:
                         raise ValueError("Método de sintonia inválido.")
                         
@@ -250,9 +243,8 @@ def simulador():
                 error = f"Erro de entrada ou processamento: {str(ve)}"
             except Exception as e:
                 error = f"Ocorreu um erro inesperado: {str(e)}. Por favor, verifique a EDO e as variáveis."
-    
     is_admin = session.get('is_admin', False)
-    return render_template('simulador.html', resultado=resultado, error=error, is_admin=is_admin)
+    return render_template('simulador.html', resultado=resultado, error=error, warning=warning, is_admin=is_admin)
 
 @app.route('/perfil')
 def perfil():

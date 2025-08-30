@@ -138,6 +138,11 @@ def sintonia_ziegler_nichols(L, T):
     return Kp, Ki, Kd
 
 def sintonia_oscilacao_forcada(Kc, Tc):
+    # Ziegler-Nichols (Oscilação Forçada)
+    # Tabela 1: Parâmetros do Controlador para Diferentes Tipos
+    # Fonte: https://pt.wikipedia.org/wiki/M%C3%A9todo_de_Ziegler-Nichols
+    
+    # PID Clássico
     Kp = 0.6 * Kc
     Ti = Tc / 2.0
     Td = Tc / 8.0
@@ -146,30 +151,6 @@ def sintonia_oscilacao_forcada(Kc, Tc):
     Kd = Kp * Td
 
     return Kp, Ki, Kd
-
-def calcula_kc_tc(FT):
-    # Encontra o ganho Kc e o periodo Tc automaticamente
-    # Isso é feito encontrando o ponto onde o lugar das raízes cruza o eixo imaginário
-    
-    # O lugar das raízes da FT em malha fechada com um controlador proporcional simples
-    # G_mf(s) = K * Gp(s) / (1 + K * Gp(s))
-    # A equação característica é 1 + K * Gp(s) = 0
-    
-    # Usamos control.root_locus para encontrar as raizes para uma gama de ganhos K
-    rlist, klist = control.root_locus(FT, plot=False)
-    
-    # Encontrar a raiz com a menor parte real positiva, o que indica o ponto de estabilidade marginal
-    # ou a primeira oscilação
-    for i, roots in enumerate(rlist):
-        for root in roots:
-            if np.isclose(root.real, 0) and root.imag > 1e-6:
-                # Encontramos um polo no eixo imaginário
-                Kc = klist[i]
-                omega_c = root.imag
-                Tc = 2 * np.pi / omega_c
-                return Kc, Tc
-
-    raise ValueError("Não foi possível encontrar o ganho crítico. O sistema é estável para todos os ganhos K > 0 ou instável para todos os ganhos.")
 
 def cria_pid_tf(Kp, Ki, Kd):
     s = control.TransferFunction.s
