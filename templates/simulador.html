@@ -238,7 +238,7 @@
         <form method="POST" action="{{ url_for('simulador') }}" id="simuladorForm">
             <label for="edo">Equação Diferencial Ordinária (EDO):</label>
             <textarea id="edo" name="edo" placeholder="Ex: diff(y(t),t,2) + 2*diff(y(t),t) + y(t) = diff(u(t),t) + u(t) ou a*diff(x(t),t) + b*x(t) = k*F(t)" required>{{ request.form.get('edo', '') }}</textarea>
-            <small>Use 'diff(var(t),t,n)' para derivada de ordem n. Ex: diff(y(t),t,2) para $y''(t)$. Coeficientes podem ser numéricos ou simbólicos (ex: 'a', 'b', 'k').</small>
+            <small>Use 'diff(var(t),t,n)' para derivada de ordem n. Ex: diff(y(t),t,2) para y''(t). Coeficientes podem ser numéricos ou simbólicos (ex: 'a', 'b', 'k').</small>
 
             <label for="entrada">Variável de Entrada (função de t):</label>
             <input type="text" id="entrada" name="entrada" placeholder="Ex: u" required value="{{ request.form.get('entrada', 'u') }}">
@@ -259,7 +259,7 @@
             </div>
 
             <div id="secao_oscilacao" class="form-section">
-                <p>Insira os valores do Ganho Crítico ($K_c$) e do Período de Oscilação ($T_c$) para o método de oscilação forçada.</p>
+                <p>Insira os valores do Ganho Crítico (Kc) e do Período de Oscilação (Tc) para o método de oscilação forçada.</p>
                 <label for="kc">Ganho Crítico (Kc):</label>
                 <input type="text" id="kc" name="kc" placeholder="Ex: 5.5" value="{{ request.form.get('kc', '') }}">
                 
