@@ -34,18 +34,20 @@ def parse_edo(edo_str, entrada_str, saida_str):
     eq_str = edo_str.replace('diff', 'sp.Derivative')
     if '=' not in eq_str:
         raise ValueError("A EDO deve conter '=' para separar LHS e RHS.")
-    lhs, rhs = eq_str.split('=')
-    eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
-
-    local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func}
     
-    potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
+    # Restaura a lógica para aceitar o formato original
+    local_dict = {'sp': sp, 't': t}
+    local_dict[saida_str] = X_func
+    local_dict[entrada_str] = F_func
+    
+    # Encontra e adiciona outras variáveis simbólicas
+    potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', edo_str))
     excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
     for sym in potential_symbols:
         if sym not in excluded and sym not in local_dict:
             local_dict[sym] = sp.symbols(sym)
 
-    eq = sp.sympify(eq_str, locals=local_dict)
+    eq = sp.sympify(f"({edo_str.replace('=', ')-(')})", locals=local_dict)
 
     Xs = sp.Symbol(f'{saida_str}s')
     Fs = sp.Symbol(f'{entrada_str}s')
