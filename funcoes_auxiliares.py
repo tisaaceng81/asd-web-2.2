@@ -27,42 +27,45 @@ def pad_coeffs(num_coeffs, den_coeffs):
     return num_coeffs, den_coeffs
 
 def parse_edo(edo_str, entrada_str, saida_str):
-    t = sp.symbols('t', real=True)
+    t, s = sp.symbols('t s', real=True)
     X_func = sp.Function(saida_str)
     F_func = sp.Function(entrada_str)
 
     eq_str = edo_str.replace('diff', 'sp.Derivative')
     if '=' not in eq_str:
         raise ValueError("A EDO deve conter '=' para separar LHS e RHS.")
-    lhs, rhs = eq_str.split('=')
-    eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
-
-    potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
-    local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func}
+    
+    # Restaura a lógica para aceitar o formato original
+    local_dict = {'sp': sp, 't': t}
+    local_dict[saida_str] = X_func
+    local_dict[entrada_str] = F_func
+    
+    # Encontra e adiciona outras variáveis simbólicas
+    potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', edo_str))
     excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
     for sym in potential_symbols:
         if sym not in excluded and sym not in local_dict:
             local_dict[sym] = sp.symbols(sym)
 
-    eq = sp.sympify(eq_str, locals=local_dict)
-
-    lhs_expr = sp.sympify(lhs.strip(), locals=local_dict)
-    if not lhs_expr.has(X_func(t)):
-        raise ValueError(f"Lado esquerdo da EDO deve conter a variável de saída '{saida_str}(t)'.")
+    eq = sp.sympify(f"({edo_str.replace('=', ')-(')})", locals=local_dict)
 
     Xs = sp.Symbol(f'{saida_str}s')
     Fs = sp.Symbol(f'{entrada_str}s')
 
-    expr_laplace = eq
-    for d in expr_laplace.atoms(sp.Derivative):
-        order = d.derivative_count
-        func_expr = d.expr
-        if func_expr.func == X_func:
-            expr_laplace = expr_laplace.subs(d, sp.Pow(sp.Symbol('s'), order) * Xs)
-        elif func_expr.func == F_func:
-            expr_laplace = expr_laplace.subs(d, sp.Pow(sp.Symbol('s'), order) * Fs)
-
-    expr_laplace = expr_laplace.subs({X_func(t): Xs, F_func(t): Fs})
+    replacements = {}
+    for expr in eq.atoms():
+        if isinstance(expr, sp.Derivative) and expr.expr.func == X_func:
+            order = expr.derivative_count
+            replacements[expr] = s**order * Xs
+        elif isinstance(expr, sp.Derivative) and expr.expr.func == F_func:
+            order = expr.derivative_count
+            replacements[expr] = s**order * Fs
+        elif expr.func == X_func:
+            replacements[expr] = Xs
+        elif expr.func == F_func:
+            replacements[expr] = Fs
+    
+    expr_laplace = eq.subs(replacements)
 
     collected_expr = sp.collect(expr_laplace, [Xs, Fs])
     coef_Xs = collected_expr.coeff(Xs)
@@ -75,13 +78,13 @@ def parse_edo(edo_str, entrada_str, saida_str):
     Ls_expr = sp.simplify(Ls_expr)
 
     num, den = sp.fraction(Ls_expr)
-    num_poly_expr = sp.collect(num, sp.Symbol('s'))
-    den_poly_expr = sp.collect(den, sp.Symbol('s'))
-
+    num_poly_expr = sp.collect(num, s)
+    den_poly_expr = sp.collect(den, s)
+    
     has_symbolic = False
     try:
-        num_poly = sp.Poly(num_poly_expr, sp.Symbol('s'))
-        den_poly = sp.Poly(den_poly_expr, sp.Symbol('s'))
+        num_poly = sp.Poly(num_poly_expr, s)
+        den_poly = sp.Poly(den_poly_expr, s)
         for c in num_poly.all_coeffs() + den_poly.all_coeffs():
             if not c.is_number:
                 has_symbolic = True
@@ -98,7 +101,6 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     FT = control.TransferFunction(num_coeffs, den_coeffs)
     return Ls_expr, FT, False
-
 
 def ft_to_latex(expr):
     return sp.latex(expr, mul_symbol='dot')
@@ -145,21 +147,12 @@ def cria_pid_tf(Kp, Ki, Kd):
 def malha_fechada_tf(Gp, Gc):
     return control.feedback(Gp * Gc, 1)
 
-def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
+def salvar_grafico_resposta(t, y, nome, deslocamento=0.0):
     y = np.array(y) + deslocamento
-    if rotacao == 180:
-        t = -t[::-1]
-        y = -y[::-1]
-    elif rotacao == 90:
-        t, y = -y, t
-    if min(t) < 0:
-        t = t - min(t)
-    if min(y) < 0:
-        y = y - min(y)
     plt.figure(figsize=(8, 4))
     plt.plot(t, y, label='Resposta ao Degrau')
-    plt.xlabel('Tempo (s)' if rotacao != 90 else 'Saída')
-    plt.ylabel('Saída' if rotacao != 90 else 'Tempo (s)')
+    plt.xlabel('Tempo (s)')
+    plt.ylabel('Saída')
     plt.title(nome)
     plt.grid(True)
     plt.legend()
@@ -187,15 +180,6 @@ def plot_polos_zeros(FT):
     plt.savefig(caminho)
     plt.close()
     return caminho
-
-def flatten_and_convert(lst):
-    result = []
-    for c in lst:
-        if hasattr(c, '__iter__') and not isinstance(c, (str, bytes)):
-            result.extend(flatten_and_convert(c))
-        else:
-            result.append(float(c))
-    return result
 
 def tabela_routh(coeficientes):
     coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]

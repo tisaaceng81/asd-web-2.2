@@ -2,9 +2,11 @@ import os
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+import numpy as np
 
 from funcoes_auxiliares import (
     parse_edo, ft_to_latex, resposta_degrau, estima_LT, sintonia_ziegler_nichols,
+    sintonia_pid_ziegler_nichols_oscilacao,
     cria_pid_tf, malha_fechada_tf, salvar_grafico_resposta, plot_polos_zeros,
     flatten_and_convert, tabela_routh
 )
@@ -12,7 +14,13 @@ from funcoes_auxiliares import (
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sua_chave_secreta_padrao')
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace('postgres://', 'postgresql://', 1)
+db_url = os.environ.get('DATABASE_URL')
+
+if db_url:
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url.replace('postgres://', 'postgresql://', 1)
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///meu_banco_de_dados.db'
+    
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -171,6 +179,7 @@ def simulador():
         edo = request.form.get('edo')
         entrada = request.form.get('entrada')
         saida = request.form.get('saida')
+        metodo_sintonia = request.form.get('metodo_sintonia', 'lt')
 
         if not edo or not entrada or not saida:
             error = "Por favor, preencha todos os campos da Equação Diferencial Ordinária, Variável de Entrada e Variável de Saída."
@@ -188,8 +197,18 @@ def simulador():
                     warning = "A função de transferência contém coeficientes simbólicos. A análise numérica (resposta ao degrau, polos/zeros, sintonia PID, Tabela de Routh) não pode ser realizada. Por favor, forneça coeficientes numéricos para essas análises."
                 else:
                     t_open, y_open = resposta_degrau(FT)
-                    L, T = estima_LT(t_open, y_open)
-                    Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
+                    
+                    if metodo_sintonia == 'lt':
+                        L, T = estima_LT(t_open, y_open)
+                        Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
+                        metodo = "Método L-T"
+                    elif metodo_sintonia == 'oscilacao':
+                        Kp, Ki, Kd = sintonia_pid_ziegler_nichols_oscilacao(FT)
+                        metodo = "Método de Oscilação"
+                    else:
+                        error = "Método de sintonia inválido."
+                        return render_template('simulador.html', resultado=None, error=error, warning=warning)
+
                     pid = cria_pid_tf(Kp, Ki, Kd)
                     mf = malha_fechada_tf(FT, pid)
                     t_closed, y_closed = resposta_degrau(mf)
@@ -220,6 +239,7 @@ def simulador():
                         'Kp': round(Kp, 4),
                         'Ki': round(Ki, 4),
                         'Kd': round(Kd, 4),
+                        'metodo_sintonia': metodo,
                         'img_resposta_aberta': img_resposta_aberta_path,
                         'img_resposta_fechada': img_resposta_fechada_path,
                         'img_pz': img_pz_path,
