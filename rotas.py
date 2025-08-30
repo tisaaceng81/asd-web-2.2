@@ -13,11 +13,8 @@ from funcoes_auxiliares import (
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sua_chave_secreta_padrao')
 
-# Obtém a URL do banco de dados da variável de ambiente, com um valor padrão para evitar o erro.
 db_url = os.environ.get('DATABASE_URL')
 
-# Se a URL existir, substitui o esquema. Caso contrário, usa um valor padrão
-# para o banco de dados local.
 if db_url:
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url.replace('postgres://', 'postgresql://', 1)
 else:
@@ -200,10 +197,8 @@ def simulador():
                     t_open, y_open = resposta_degrau(FT)
                     L, T = estima_LT(t_open, y_open)
                     
-                    # Usa uma lógica de fallback caso o sistema de malha aberta já oscile
-                    # A lógica da sua função sintonia_ziegler_nichols original é mantida.
                     if np.isclose(y_open[-1], 0) or np.diff(np.sign(y_open - y_open[-1])).any():
-                         Kp, Ki, Kd = 0.6, 0.01, 0.1 # Valores conservadores de fallback
+                         Kp, Ki, Kd = 0.6, 0.01, 0.1
                     else:
                          Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
 

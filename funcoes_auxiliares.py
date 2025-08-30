@@ -39,7 +39,6 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func}
     
-    # Use re.findall para encontrar todas as variáveis simbólicas no resto da string
     potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
     excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
     for sym in potential_symbols:
@@ -51,7 +50,6 @@ def parse_edo(edo_str, entrada_str, saida_str):
     Xs = sp.Symbol(f'{saida_str}s')
     Fs = sp.Symbol(f'{entrada_str}s')
 
-    # Correção: Substituir funções e suas derivadas em um único passo
     replacements = {}
     for expr in eq.atoms():
         if isinstance(expr, sp.Derivative) and expr.expr.func == X_func:
