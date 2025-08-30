@@ -5,8 +5,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from funcoes_auxiliares import (
     parse_edo, ft_to_latex, resposta_degrau, estima_LT, sintonia_ziegler_nichols,
-    cria_pid_tf, malha_fechada_tf, salvar_grafico_resposta, plot_polos_zeros,
-    flatten_and_convert, tabela_routh
+    sintonia_oscilacao_forcada, cria_pid_tf, malha_fechada_tf, salvar_grafico_resposta,
+    plot_polos_zeros, flatten_and_convert, tabela_routh
 )
 
 app = Flask(__name__)
@@ -171,6 +171,7 @@ def simulador():
         edo = request.form.get('edo')
         entrada = request.form.get('entrada')
         saida = request.form.get('saida')
+        metodo_sintonia = request.form.get('metodo_sintonia')
 
         if not edo or not entrada or not saida:
             error = "Por favor, preencha todos os campos da Equação Diferencial Ordinária, Variável de Entrada e Variável de Saída."
@@ -181,15 +182,28 @@ def simulador():
                 
                 resultado = {
                     'ft_latex': ft_latex,
-                    'is_symbolic': has_symbolic_coeffs
+                    'is_symbolic': has_symbolic_coeffs,
+                    'method': metodo_sintonia
                 }
 
                 if has_symbolic_coeffs:
                     warning = "A função de transferência contém coeficientes simbólicos. A análise numérica (resposta ao degrau, polos/zeros, sintonia PID, Tabela de Routh) não pode ser realizada. Por favor, forneça coeficientes numéricos para essas análises."
                 else:
-                    t_open, y_open = resposta_degrau(FT)
-                    L, T = estima_LT(t_open, y_open)
-                    Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
+                    Kp, Ki, Kd = 0, 0, 0
+                    img_resposta_aberta_path = None
+                    
+                    if metodo_sintonia == 'degrau':
+                        t_open, y_open = resposta_degrau(FT)
+                        L, T = estima_LT(t_open, y_open)
+                        Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
+                        img_resposta_aberta_path = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', deslocamento=0.0)
+                    elif metodo_sintonia == 'oscilacao':
+                        kc = float(request.form.get('kc'))
+                        tc = float(request.form.get('tc'))
+                        Kp, Ki, Kd = sintonia_oscilacao_forcada(kc, tc)
+                    else:
+                        raise ValueError("Método de sintonia inválido.")
+                        
                     pid = cria_pid_tf(Kp, Ki, Kd)
                     mf = malha_fechada_tf(FT, pid)
                     t_closed, y_closed = resposta_degrau(mf)
@@ -207,7 +221,6 @@ def simulador():
                     expr_pid = sp.simplify(tf_to_sympy_tf(pid))
                     expr_mf = sp.simplify(tf_to_sympy_tf(mf))
 
-                    img_resposta_aberta_path = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', deslocamento=0.0)
                     img_resposta_fechada_path = salvar_grafico_resposta(t_closed, y_closed, 'resposta_malha_fechada', deslocamento=1.0)
                     img_pz_path = plot_polos_zeros(FT)
                     
@@ -217,9 +230,9 @@ def simulador():
                     resultado.update({
                         'pid_latex': sp.latex(expr_pid, mul_symbol='dot'),
                         'mf_latex': sp.latex(expr_mf, mul_symbol='dot'),
-                        'Kp': round(Kp, 4),
-                        'Ki': round(Ki, 4),
-                        'Kd': round(Kd, 4),
+                        'Kp': Kp,
+                        'Ki': Ki,
+                        'Kd': Kd,
                         'img_resposta_aberta': img_resposta_aberta_path,
                         'img_resposta_fechada': img_resposta_fechada_path,
                         'img_pz': img_pz_path,

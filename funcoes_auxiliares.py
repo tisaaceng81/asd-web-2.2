@@ -99,7 +99,6 @@ def parse_edo(edo_str, entrada_str, saida_str):
     FT = control.TransferFunction(num_coeffs, den_coeffs)
     return Ls_expr, FT, False
 
-
 def ft_to_latex(expr):
     return sp.latex(expr, mul_symbol='dot')
 
@@ -136,6 +135,21 @@ def sintonia_ziegler_nichols(L, T):
     Td = 0.5 * L
     Ki = Kp / Ti if Ti != 0 else 0
     Kd = Kp * Td
+    return Kp, Ki, Kd
+
+def sintonia_oscilacao_forcada(Kc, Tc):
+    # Ziegler-Nichols (Oscilação Forçada)
+    # Tabela 1: Parâmetros do Controlador para Diferentes Tipos
+    # Fonte: https://pt.wikipedia.org/wiki/M%C3%A9todo_de_Ziegler-Nichols
+    
+    # PID Clássico
+    Kp = 0.6 * Kc
+    Ti = Tc / 2.0
+    Td = Tc / 8.0
+    
+    Ki = Kp / Ti if Ti != 0 else 0
+    Kd = Kp * Td
+
     return Kp, Ki, Kd
 
 def cria_pid_tf(Kp, Ki, Kd):
