@@ -138,9 +138,7 @@ def sintonia_ziegler_nichols(L, T):
     return Kp, Ki, Kd
 
 def sintonia_oscilacao_forcada(Kc, Tc):
-    # Ziegler-Nichols (Oscilação Forçada)
-    # Tabela 1: Parâmetros do Controlador para Diferentes Tipos
-    # Fonte: https://pt.wikipedia.org/wiki/M%C3%A9todo_de_Ziegler-Nichols
+    
     
     # PID Clássico
     Kp = 0.6 * Kc
