@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Simulador - Função de Transferência e PID</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async
+            src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f9f9f9;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .navbar {
+            background-color: #333;
+            overflow: hidden;
+            width: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1000;
+            border-radius: 0;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            padding: 0 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .navbar a {
+            display: block;
+            color: #f2f2f2;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        .navbar a:hover {
+            background-color: #ddd;
+            color: black;
+        }
+        .navbar a.right {
+            margin-left: auto;
+        }
+        .content-wrapper {
+            flex-grow: 1;
+            margin-top: 70px;
+            max-width: 900px;
+            margin-left: auto;
+            margin-right: auto;
+            padding: 20px;
+        }
+        h2, h3 {
+            text-align: center;
+            color: #333;
+        }
+        .math-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            font-size: 1.5rem;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        img {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            margin: 10px auto 30px auto;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+        table {
+            margin: 0 auto 40px auto;
+            border-collapse: collapse;
+            width: auto;
+            background: white;
+        }
+        table, th, td {
+            border: 1px solid #bbb;
+        }
+        th, td {
+            padding: 8px 12px;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+            max-width: 400px;
+            margin: 0 auto 40px auto;
+            font-size: 1.1rem;
+        }
+        ul li {
+            padding: 5px 0;
+        }
+        .error {
+            color: red;
+            text-align: center;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .warning-message {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #ffeeba;
+            margin-top: 20px;
+            text-align: left;
+            font-size: 1.1em;
+            margin-bottom: 20px;
+        }
+        form {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin: 0 auto 40px auto;
+        }
+        form label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+        form input[type="text"],
+        form textarea {
+            width: calc(100% - 16px);
+            padding: 8px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        form textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        .form-section {
+            display: none;
+        }
+        form button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 1.1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            display: block;
+            margin: 0 auto;
+            transition: background-color 0.3s ease;
+        }
+        form button:hover {
+            background-color: #0056b3;
+        }
+        .flashes {
+            list-style-type: none;
+            padding: 0;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .flashes li {
+            padding: 10px;
+            margin-bottom: 5px;
+            border-radius: 5px;
+            font-weight: bold;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            max-width: 800px;
+        }
+        .flashes .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .flashes .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .flashes .danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .flashes .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .radio-group {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .radio-group input[type="radio"] {
+            display: none;
+        }
+        .radio-group label {
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s, color 0.3s;
+            border: 1px solid #ced4da;
+        }
+        .radio-group input[type="radio"]:checked + label {
+            background-color: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="{{ url_for('painel') }}">Painel</a>
+        <a href="{{ url_for('simulador') }}">Simulador</a>
+        <a href="{{ url_for('perfil') }}">Perfil</a>
+        <a href="{{ url_for('logout') }}" class="right">Sair</a>
+    </div>
+
+    <div class="content-wrapper">
+        <h2>Simulador de Função de Transferência e Sintonia PID</h2>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <ul class="flashes">
+            {% for category, message in messages %}
+              <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </ul>
+          {% endif %}
+        {% endwith %}
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('simulador') }}" id="simuladorForm">
+            <label for="edo">Equação Diferencial Ordinária (EDO):</label>
+            <textarea id="edo" name="edo" placeholder="Ex: diff(y(t),t,2) + 2*diff(y(t),t) + y(t) = diff(u(t),t) + u(t) ou a*diff(x(t),t) + b*x(t) = k*F(t)" required>{{ request.form.get('edo', '') }}</textarea>
+            <small>Use 'diff(var(t),t,n)' para derivada de ordem n. Ex: diff(y(t),t,2) para $y''(t)$. Coeficientes podem ser numéricos ou simbólicos (ex: 'a', 'b', 'k').</small>
+
+            <label for="entrada">Variável de Entrada (função de t):</label>
+            <input type="text" id="entrada" name="entrada" placeholder="Ex: u" required value="{{ request.form.get('entrada', 'u') }}">
+
+            <label for="saida">Variável de Saída (função de t):</label>
+            <input type="text" id="saida" name="saida" placeholder="Ex: y" required value="{{ request.form.get('saida', 'y') }}">
+
+            <h4>Escolha o Método de Sintonia PID:</h4>
+            <div class="radio-group">
+                <input type="radio" id="metodo_degrau" name="metodo_sintonia" value="degrau" checked>
+                <label for="metodo_degrau">Resposta ao Degrau</label>
+                <input type="radio" id="metodo_oscilacao" name="metodo_sintonia" value="oscilacao">
+                <label for="metodo_oscilacao">Oscilação Forçada</label>
+            </div>
+
+            <div id="secao_degrau" class="form-section" style="display:block;">
+                <p>Este método estima L (atraso de tempo) e T (constante de tempo) a partir da resposta ao degrau da malha aberta.</p>
+            </div>
+
+            <div id="secao_oscilacao" class="form-section">
+                <p>Insira os valores do Ganho Crítico ($K_c$) e do Período de Oscilação ($T_c$) para o método de oscilação forçada.</p>
+                <label for="kc">Ganho Crítico (Kc):</label>
+                <input type="text" id="kc" name="kc" placeholder="Ex: 5.5" value="{{ request.form.get('kc', '') }}">
+                
+                <label for="tc">Período de Oscilação (Tc):</label>
+                <input type="text" id="tc" name="tc" placeholder="Ex: 2.1" value="{{ request.form.get('tc', '') }}">
+            </div>
+
+            <button type="submit">Calcular</button>
+        </form>
+
+        {% if resultado %}
+            <div class="math-container">
+                <h3>Função de Transferência Calculada</h3>
+                $${{ resultado.ft_latex|safe }}$$
+            </div>
+
+            {% if resultado.is_symbolic %}
+                <div class="warning-message">
+                    A função de transferência contém coeficientes simbólicos. A análise numérica (resposta ao degrau, polos/zeros, sintonia PID, Tabela de Routh) não pode ser realizada. Por favor, forneça coeficientes numéricos para essas análises.
+                </div>
+            {% else %}
+                <div class="math-container">
+                    <h3>Função de Transferência do PID</h3>
+                    $${{ resultado.pid_latex|safe }}$$
+                </div>
+
+                <div class="math-container">
+                    <h3>Função de Transferência da Malha Fechada com PID</h3>
+                    $${{ resultado.mf_latex|safe }}$$
+                </div>
+
+                {% if resultado.method == 'degrau' %}
+                <h3>Resposta ao Degrau - Malha Aberta</h3>
+                {% if resultado.img_resposta_aberta %}
+                <img src="{{ url_for('static', filename=resultado.img_resposta_aberta.split('/')[-1]) }}" alt="Resposta Malha Aberta" />
+                {% else %}
+                <p class="error">Não foi possível gerar o gráfico de Resposta em Malha Aberta.</p>
+                {% endif %}
+                {% endif %}
+
+                <h3>Resposta ao Degrau - Malha Fechada</h3>
+                {% if resultado.img_resposta_fechada %}
+                <img src="{{ url_for('static', filename=resultado.img_resposta_fechada.split('/')[-1]) }}" alt="Resposta Malha Fechada" />
+                {% else %}
+                <p class="error">Não foi possível gerar o gráfico de Resposta em Malha Fechada.</p>
+                {% endif %}
+
+                <h3>Parâmetros PID (Ziegler-Nichols - Método de {{ "Resposta ao Degrau" if resultado.method == "degrau" else "Oscilação Forçada" }})</h3>
+                <ul>
+                    <li><strong>Kp:</strong> {{ resultado.Kp|round(4) }}</li>
+                    <li><strong>Ki:</strong> {{ resultado.Ki|round(4) }}</li>
+                    <li><strong>Kd:</strong> {{ resultado.Kd|round(4) }}</li>
+                </ul>
+
+                <h3>Tabela de Routh</h3>
+                {% if resultado.routh_table and resultado.routh_table|length > 0 and resultado.routh_table[0]|length > 0 %}
+                <table>
+                    <tbody>
+                        {% for linha in resultado.routh_table %}
+                            <tr>
+                                {% for item in linha %}
+                                    <td>{{ item|round(4) if item is not none }}</td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p><strong>Estabilidade:</strong>
+                    {% set first_column = [] %}
+                    {% for row in resultado.routh_table %}
+                        {% if row and row[0] is not none %}
+                            {% set _ = first_column.append(row[0]) %}
+                        {% endif %}
+                    {% endfor %}
+
+                    {% set sign_changes = 0 %}
+                    {% for i in range(first_column | length - 1) %}
+                        {% if first_column[i] * first_column[i+1] < 0 %}
+                            {% set sign_changes = sign_changes + 1 %}
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if sign_changes == 0 %}
+                        O sistema é <strong>estável</strong>.
+                    {% else %}
+                        O sistema é <strong>instável</strong> ({{ sign_changes }} mudanças de sinal na primeira coluna).
+                    {% endif %}
+                </p>
+                {% else %}
+                <p class="error">Não foi possível gerar a Tabela de Routh ou ela está vazia/inválida.</p>
+                {% endif %}
+
+                <h3>Região de Estabilidade (Polos e Zeros)</h3>
+                {% if resultado.img_pz %}
+                <img src="{{ url_for('static', filename=resultado.img_pz.split('/')[-1]) }}" alt="Diagrama de Polos e Zeros" />
+                {% else %}
+                <p class="error">Não foi possível gerar o Diagrama de Polos e Zeros.</p>
+                {% endif %}
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <script>
+        const metodoDegrau = document.getElementById('metodo_degrau');
+        const metodoOscilacao = document.getElementById('metodo_oscilacao');
+        const secaoDegrau = document.getElementById('secao_degrau');
+        const secaoOscilacao = document.getElementById('secao_oscilacao');
+
+        function toggleSections() {
+            if (metodoDegrau.checked) {
+                secaoDegrau.style.display = 'block';
+                secaoOscilacao.style.display = 'none';
+                document.getElementById('kc').removeAttribute('required');
+                document.getElementById('tc').removeAttribute('required');
+            } else if (metodoOscilacao.checked) {
+                secaoDegrau.style.display = 'none';
+                secaoOscilacao.style.display = 'block';
+                document.getElementById('kc').setAttribute('required', 'required');
+                document.getElementById('tc').setAttribute('required', 'required');
+            }
+        }
+
+        metodoDegrau.addEventListener('change', toggleSections);
+        metodoOscilacao.addEventListener('change', toggleSections);
+
+        document.addEventListener('DOMContentLoaded', toggleSections);
+    </script>
+</body>
+</html>
