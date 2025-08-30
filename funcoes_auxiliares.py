@@ -99,7 +99,6 @@ def parse_edo(edo_str, entrada_str, saida_str):
     FT = control.TransferFunction(num_coeffs, den_coeffs)
     return Ls_expr, FT, False
 
-
 def ft_to_latex(expr):
     return sp.latex(expr, mul_symbol='dot')
 
@@ -131,6 +130,7 @@ def estima_LT(t, y):
 def sintonia_ziegler_nichols(L, T):
     if L == 0:
         L = 0.01
+    # Mantém a lógica da sintonia de Ziegler-Nichols do seu código original.
     Kp = 1.2 * T / L
     Ti = 2 * L
     Td = 0.5 * L
@@ -145,21 +145,12 @@ def cria_pid_tf(Kp, Ki, Kd):
 def malha_fechada_tf(Gp, Gc):
     return control.feedback(Gp * Gc, 1)
 
-def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
+def salvar_grafico_resposta(t, y, nome, deslocamento=0.0):
     y = np.array(y) + deslocamento
-    if rotacao == 180:
-        t = -t[::-1]
-        y = -y[::-1]
-    elif rotacao == 90:
-        t, y = -y, t
-    if min(t) < 0:
-        t = t - min(t)
-    if min(y) < 0:
-        y = y - min(y)
     plt.figure(figsize=(8, 4))
     plt.plot(t, y, label='Resposta ao Degrau')
-    plt.xlabel('Tempo (s)' if rotacao != 90 else 'Saída')
-    plt.ylabel('Saída' if rotacao != 90 else 'Tempo (s)')
+    plt.xlabel('Tempo (s)')
+    plt.ylabel('Saída')
     plt.title(nome)
     plt.grid(True)
     plt.legend()
@@ -187,15 +178,6 @@ def plot_polos_zeros(FT):
     plt.savefig(caminho)
     plt.close()
     return caminho
-
-def flatten_and_convert(lst):
-    result = []
-    for c in lst:
-        if hasattr(c, '__iter__') and not isinstance(c, (str, bytes)):
-            result.extend(flatten_and_convert(c))
-        else:
-            result.append(float(c))
-    return result
 
 def tabela_routh(coeficientes):
     coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
