@@ -36,22 +36,24 @@ class User(db.Model):
     def __repr__(self):
         return f'<User {self.email}>'
 
-with app.app_context():
-    db.create_all()
-    admin_email = 'tisaaceng@gmail.com'
-    admin_user = User.query.filter_by(email=admin_email).first()
-    if not admin_user:
-        hashed_password = generate_password_hash('4839AT81', method='pbkdf2:sha256')
-        new_admin = User(
-            nome='Tiago Carneiro',
-            email=admin_email,
-            senha=hashed_password,
-            aprovado=True,
-            is_admin=True
-        )
-        db.session.add(new_admin)
-        db.session.commit()
-        print("Usuário administrador adicionado ao banco de dados.")
+@app.before_first_request
+def setup_database():
+    with app.app_context():
+        db.create_all()
+        admin_email = 'tisaaceng@gmail.com'
+        admin_user = User.query.filter_by(email=admin_email).first()
+        if not admin_user:
+            hashed_password = generate_password_hash('4839AT81', method='pbkdf2:sha256')
+            new_admin = User(
+                nome='Tiago Carneiro',
+                email=admin_email,
+                senha=hashed_password,
+                aprovado=True,
+                is_admin=True
+            )
+            db.session.add(new_admin)
+            db.session.commit()
+            print("Usuário administrador adicionado ao banco de dados.")
 
 @app.route('/')
 def home():
@@ -203,8 +205,12 @@ def simulador():
                         Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
                         metodo = "Método L-T"
                     elif metodo_sintonia == 'oscilacao':
-                        Kp, Ki, Kd = sintonia_pid_ziegler_nichols_oscilacao(FT)
-                        metodo = "Método de Oscilação"
+                        try:
+                            Kp, Ki, Kd = sintonia_pid_ziegler_nichols_oscilacao(FT)
+                            metodo = "Método de Oscilação"
+                        except Exception as e:
+                            error = f"Ocorreu um erro no cálculo do Método de Oscilação: {str(e)}"
+                            return render_template('simulador.html', resultado=None, error=error, warning=warning)
                     else:
                         error = "Método de sintonia inválido."
                         return render_template('simulador.html', resultado=None, error=error, warning=warning)
