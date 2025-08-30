@@ -2,7 +2,6 @@ import os
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-import numpy as np
 
 from funcoes_auxiliares import (
     parse_edo, ft_to_latex, resposta_degrau, estima_LT, sintonia_ziegler_nichols,
@@ -13,13 +12,7 @@ from funcoes_auxiliares import (
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sua_chave_secreta_padrao')
 
-db_url = os.environ.get('DATABASE_URL')
-
-if db_url:
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url.replace('postgres://', 'postgresql://', 1)
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///meu_banco_de_dados.db'
-    
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -196,12 +189,7 @@ def simulador():
                 else:
                     t_open, y_open = resposta_degrau(FT)
                     L, T = estima_LT(t_open, y_open)
-                    
-                    if np.isclose(y_open[-1], 0) or np.diff(np.sign(y_open - y_open[-1])).any():
-                         Kp, Ki, Kd = 0.6, 0.01, 0.1
-                    else:
-                         Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
-
+                    Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
                     pid = cria_pid_tf(Kp, Ki, Kd)
                     mf = malha_fechada_tf(FT, pid)
                     t_closed, y_closed = resposta_degrau(mf)
