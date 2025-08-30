@@ -208,15 +208,6 @@
             color: white;
             border-color: #007bff;
         }
-        .checkbox-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 15px;
-        }
-        .checkbox-container input {
-            margin-right: 8px;
-        }
     </style>
 </head>
 <body>
@@ -268,20 +259,12 @@
             </div>
 
             <div id="secao_oscilacao" class="form-section">
-                <p>Insira os valores do Ganho Crítico ($K_c$) e do Período de Oscilação ($T_c$) para o método de oscilação forçada, ou opte pelo cálculo automático.</p>
+                <p>Insira os valores do Ganho Crítico ($K_c$) e do Período de Oscilação ($T_c$) para o método de oscilação forçada.</p>
+                <label for="kc">Ganho Crítico (Kc):</label>
+                <input type="text" id="kc" name="kc" placeholder="Ex: 5.5" value="{{ request.form.get('kc', '') }}">
                 
-                <div class="checkbox-container">
-                    <input type="checkbox" id="calcula_auto" name="calcula_auto" value="true">
-                    <label for="calcula_auto">Calcular automaticamente Kc e Tc</label>
-                </div>
-                
-                <div id="campos_manuais">
-                    <label for="kc">Ganho Crítico (Kc):</label>
-                    <input type="text" id="kc" name="kc" placeholder="Ex: 5.5" value="{{ request.form.get('kc', '') }}">
-                    
-                    <label for="tc">Período de Oscilação (Tc):</label>
-                    <input type="text" id="tc" name="tc" placeholder="Ex: 2.1" value="{{ request.form.get('tc', '') }}">
-                </div>
+                <label for="tc">Período de Oscilação (Tc):</label>
+                <input type="text" id="tc" name="tc" placeholder="Ex: 2.1" value="{{ request.form.get('tc', '') }}">
             </div>
 
             <button type="submit">Calcular</button>
@@ -326,10 +309,6 @@
 
                 <h3>Parâmetros PID (Ziegler-Nichols - Método de {{ "Resposta ao Degrau" if resultado.method == "degrau" else "Oscilação Forçada" }})</h3>
                 <ul>
-                    {% if resultado.method == 'oscilacao' and resultado.automatico %}
-                    <li><strong>Ganho Crítico (Kc):</strong> {{ resultado.Kc|round(4) }}</li>
-                    <li><strong>Período de Oscilação (Tc):</strong> {{ resultado.Tc|round(4) }}</li>
-                    {% endif %}
                     <li><strong>Kp:</strong> {{ resultado.Kp|round(4) }}</li>
                     <li><strong>Ki:</strong> {{ resultado.Ki|round(4) }}</li>
                     <li><strong>Kd:</strong> {{ resultado.Kd|round(4) }}</li>
@@ -388,40 +367,23 @@
         const metodoOscilacao = document.getElementById('metodo_oscilacao');
         const secaoDegrau = document.getElementById('secao_degrau');
         const secaoOscilacao = document.getElementById('secao_oscilacao');
-        const calculaAuto = document.getElementById('calcula_auto');
-        const camposManuais = document.getElementById('campos_manuais');
-        const kcInput = document.getElementById('kc');
-        const tcInput = document.getElementById('tc');
 
         function toggleSections() {
             if (metodoDegrau.checked) {
                 secaoDegrau.style.display = 'block';
                 secaoOscilacao.style.display = 'none';
-                kcInput.removeAttribute('required');
-                tcInput.removeAttribute('required');
-                calculaAuto.checked = false;
+                document.getElementById('kc').removeAttribute('required');
+                document.getElementById('tc').removeAttribute('required');
             } else if (metodoOscilacao.checked) {
                 secaoDegrau.style.display = 'none';
                 secaoOscilacao.style.display = 'block';
-                toggleCamposManuais();
-            }
-        }
-
-        function toggleCamposManuais() {
-            if (calculaAuto.checked) {
-                camposManuais.style.display = 'none';
-                kcInput.removeAttribute('required');
-                tcInput.removeAttribute('required');
-            } else {
-                camposManuais.style.display = 'block';
-                kcInput.setAttribute('required', 'required');
-                tcInput.setAttribute('required', 'required');
+                document.getElementById('kc').setAttribute('required', 'required');
+                document.getElementById('tc').setAttribute('required', 'required');
             }
         }
 
         metodoDegrau.addEventListener('change', toggleSections);
         metodoOscilacao.addEventListener('change', toggleSections);
-        calculaAuto.addEventListener('change', toggleCamposManuais);
 
         document.addEventListener('DOMContentLoaded', toggleSections);
     </script>
