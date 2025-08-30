@@ -11,25 +11,24 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            margin: 0; /* Removido para navbar fixa */
-            padding: 0; /* Removido para navbar fixa */
+            margin: 0;
+            padding: 0;
             background-color: #f9f9f9;
             display: flex;
-            flex-direction: column; /* Adicionado para layout com navbar fixa */
+            flex-direction: column;
             min-height: 100vh;
         }
-        /* Estilos da barra de navegação (navbar) */
         .navbar {
             background-color: #333;
             overflow: hidden;
             width: 100%;
-            position: fixed; /* Navbar fixa no topo */
+            position: fixed;
             top: 0;
             left: 0;
             z-index: 1000;
             border-radius: 0;
-            display: flex; /* Para alinhar itens */
-            justify-content: flex-start; /* Alinha itens à esquerda por padrão */
+            display: flex;
+            justify-content: flex-start;
             align-items: center;
             padding: 0 10px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
@@ -47,12 +46,11 @@
             color: black;
         }
         .navbar a.right {
-            margin-left: auto; /* Empurra os itens para a direita */
+            margin-left: auto;
         }
-        /* Conteúdo principal da página */
         .content-wrapper {
-            flex-grow: 1; /* Permite que o wrapper ocupe o espaço restante */
-            margin-top: 70px; /* Espaço para a navbar fixa */
+            flex-grow: 1;
+            margin-top: 70px;
             max-width: 900px;
             margin-left: auto;
             margin-right: auto;
@@ -110,9 +108,9 @@
             margin-bottom: 20px;
             font-weight: bold;
         }
-        .warning-message { /* NOVO ESTILO */
-            background-color: #fff3cd; /* Light yellow */
-            color: #856404; /* Dark yellow */
+        .warning-message {
+            background-color: #fff3cd;
+            color: #856404;
             padding: 15px;
             border-radius: 8px;
             border: 1px solid #ffeeba;
@@ -135,18 +133,21 @@
             font-weight: bold;
         }
         form input[type="text"],
-        form textarea { /* Adicionado textarea para EDO se usar */
-            width: calc(100% - 16px); /* Ajuste para padding */
+        form textarea {
+            width: calc(100% - 16px);
             padding: 8px;
             margin-bottom: 15px;
             border-radius: 5px;
             border: 1px solid #ccc;
             font-size: 1rem;
-            box-sizing: border-box; /* Garante que padding não aumente a largura */
+            box-sizing: border-box;
         }
         form textarea {
             resize: vertical;
             min-height: 80px;
+        }
+        .form-section {
+            display: none;
         }
         form button {
             background-color: #007bff;
@@ -163,7 +164,6 @@
         form button:hover {
             background-color: #0056b3;
         }
-        /* Estilos para mensagens flash */
         .flashes {
             list-style-type: none;
             padding: 0;
@@ -184,6 +184,30 @@
         .flashes .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
         .flashes .danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .flashes .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .radio-group {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .radio-group input[type="radio"] {
+            display: none;
+        }
+        .radio-group label {
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s, color 0.3s;
+            border: 1px solid #ced4da;
+        }
+        .radio-group input[type="radio"]:checked + label {
+            background-color: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
     </style>
 </head>
 <body>
@@ -211,7 +235,7 @@
         <div class="error">{{ error }}</div>
         {% endif %}
 
-        <form method="POST" action="{{ url_for('simulador') }}">
+        <form method="POST" action="{{ url_for('simulador') }}" id="simuladorForm">
             <label for="edo">Equação Diferencial Ordinária (EDO):</label>
             <textarea id="edo" name="edo" placeholder="Ex: diff(y(t),t,2) + 2*diff(y(t),t) + y(t) = diff(u(t),t) + u(t) ou a*diff(x(t),t) + b*x(t) = k*F(t)" required>{{ request.form.get('edo', '') }}</textarea>
             <small>Use 'diff(var(t),t,n)' para derivada de ordem n. Ex: diff(y(t),t,2) para $y''(t)$. Coeficientes podem ser numéricos ou simbólicos (ex: 'a', 'b', 'k').</small>
@@ -221,6 +245,27 @@
 
             <label for="saida">Variável de Saída (função de t):</label>
             <input type="text" id="saida" name="saida" placeholder="Ex: y" required value="{{ request.form.get('saida', 'y') }}">
+
+            <h4>Escolha o Método de Sintonia PID:</h4>
+            <div class="radio-group">
+                <input type="radio" id="metodo_degrau" name="metodo_sintonia" value="degrau" checked>
+                <label for="metodo_degrau">Resposta ao Degrau</label>
+                <input type="radio" id="metodo_oscilacao" name="metodo_sintonia" value="oscilacao">
+                <label for="metodo_oscilacao">Oscilação Forçada</label>
+            </div>
+
+            <div id="secao_degrau" class="form-section" style="display:block;">
+                <p>Este método estima L (atraso de tempo) e T (constante de tempo) a partir da resposta ao degrau da malha aberta.</p>
+            </div>
+
+            <div id="secao_oscilacao" class="form-section">
+                <p>Insira os valores do Ganho Crítico ($K_c$) e do Período de Oscilação ($T_c$) para o método de oscilação forçada.</p>
+                <label for="kc">Ganho Crítico (Kc):</label>
+                <input type="text" id="kc" name="kc" placeholder="Ex: 5.5" value="{{ request.form.get('kc', '') }}">
+                
+                <label for="tc">Período de Oscilação (Tc):</label>
+                <input type="text" id="tc" name="tc" placeholder="Ex: 2.1" value="{{ request.form.get('tc', '') }}">
+            </div>
 
             <button type="submit">Calcular</button>
         </form>
@@ -246,11 +291,13 @@
                     $${{ resultado.mf_latex|safe }}$$
                 </div>
 
+                {% if resultado.method == 'degrau' %}
                 <h3>Resposta ao Degrau - Malha Aberta</h3>
                 {% if resultado.img_resposta_aberta %}
                 <img src="{{ url_for('static', filename=resultado.img_resposta_aberta.split('/')[-1]) }}" alt="Resposta Malha Aberta" />
                 {% else %}
                 <p class="error">Não foi possível gerar o gráfico de Resposta em Malha Aberta.</p>
+                {% endif %}
                 {% endif %}
 
                 <h3>Resposta ao Degrau - Malha Fechada</h3>
@@ -260,7 +307,7 @@
                 <p class="error">Não foi possível gerar o gráfico de Resposta em Malha Fechada.</p>
                 {% endif %}
 
-                <h3>Parâmetros PID (Ziegler-Nichols)</h3>
+                <h3>Parâmetros PID (Ziegler-Nichols - Método de {{ "Resposta ao Degrau" if resultado.method == "degrau" else "Oscilação Forçada" }})</h3>
                 <ul>
                     <li><strong>Kp:</strong> {{ resultado.Kp|round(4) }}</li>
                     <li><strong>Ki:</strong> {{ resultado.Ki|round(4) }}</li>
@@ -311,8 +358,34 @@
                 {% else %}
                 <p class="error">Não foi possível gerar o Diagrama de Polos e Zeros.</p>
                 {% endif %}
-            {% endif %} {# End if not resultado.is_symbolic #}
-        {% endif %} {# End if resultado #}
+            {% endif %}
+        {% endif %}
     </div>
+
+    <script>
+        const metodoDegrau = document.getElementById('metodo_degrau');
+        const metodoOscilacao = document.getElementById('metodo_oscilacao');
+        const secaoDegrau = document.getElementById('secao_degrau');
+        const secaoOscilacao = document.getElementById('secao_oscilacao');
+
+        function toggleSections() {
+            if (metodoDegrau.checked) {
+                secaoDegrau.style.display = 'block';
+                secaoOscilacao.style.display = 'none';
+                document.getElementById('kc').removeAttribute('required');
+                document.getElementById('tc').removeAttribute('required');
+            } else if (metodoOscilacao.checked) {
+                secaoDegrau.style.display = 'none';
+                secaoOscilacao.style.display = 'block';
+                document.getElementById('kc').setAttribute('required', 'required');
+                document.getElementById('tc').setAttribute('required', 'required');
+            }
+        }
+
+        metodoDegrau.addEventListener('change', toggleSections);
+        metodoOscilacao.addEventListener('change', toggleSections);
+
+        document.addEventListener('DOMContentLoaded', toggleSections);
+    </script>
 </body>
 </html>
