@@ -31,14 +31,10 @@ def parse_edo(edo_str, entrada_str, saida_str):
     X_func = sp.Function(saida_str)
     F_func = sp.Function(entrada_str)
 
-    # Substituir diff(...) por sp.Derivative(...)
-    eq_str = re.sub(r'diff\(\s*(\w+)\(t\)\s*,\s*t\s*(?:,\s*(\d+)\s*)?\)', 
-                    lambda m: f"sp.Derivative({m.group(1)}(t), t, {m.group(2)})" if m.group(2) else f"sp.Derivative({m.group(1)}(t), t)", 
-                    edo_str)
-
+    eq_str = edo_str.replace('diff', 'sp.Derivative')
     if '=' not in eq_str:
         raise ValueError("A EDO deve conter '=' para separar LHS e RHS.")
-
+    
     potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
     local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func}
     excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
@@ -50,9 +46,6 @@ def parse_edo(edo_str, entrada_str, saida_str):
     lhs_expr_sym = sp.sympify(lhs.strip(), locals=local_dict)
     rhs_expr_sym = sp.sympify(rhs.strip(), locals=local_dict)
 
-    if not lhs_expr_sym.has(X_func(t)):
-        raise ValueError(f"Lado esquerdo da EDO deve conter a variável de saída '{saida_str}(t)'.")
-
     s = sp.symbols('s')
     Xs = sp.Symbol(f'{saida_str}s')
     Fs = sp.Symbol(f'{entrada_str}s')
@@ -60,25 +53,32 @@ def parse_edo(edo_str, entrada_str, saida_str):
     laplace_lhs = sp.laplace_transform(lhs_expr_sym, t, s, noconds=True)
     laplace_rhs = sp.laplace_transform(rhs_expr_sym, t, s, noconds=True)
 
-    laplace_lhs = laplace_lhs.subs({X_func(t): Xs, F_func(t): Fs})
-    laplace_rhs = laplace_rhs.subs({X_func(t): Xs, F_func(t): Fs})
+    subs_dict_lhs = {}
+    subs_dict_rhs = {}
+    for n in range(0, 10):
+        subs_dict_lhs[sp.Derivative(X_func(t), (t, n))] = Xs * s**n
+        subs_dict_rhs[sp.Derivative(F_func(t), (t, n))] = Fs * s**n
+    laplace_lhs = laplace_lhs.subs(subs_dict_lhs)
+    laplace_rhs = laplace_rhs.subs(subs_dict_rhs)
 
     collected_lhs = sp.collect(laplace_lhs, [Xs, Fs])
     collected_rhs = sp.collect(laplace_rhs, [Xs, Fs])
-
+    
     coef_Xs = collected_lhs.coeff(Xs) - collected_rhs.coeff(Xs)
     coef_Fs = collected_rhs.coeff(Fs) - collected_lhs.coeff(Fs)
 
     if coef_Xs == 0:
         raise ValueError(f"Coeficiente da variável de saída no domínio de Laplace é zero.")
 
-    Ls_expr = sp.simplify(coef_Fs / coef_Xs)
+    Ls_expr = coef_Fs / coef_Xs
+    Ls_expr = sp.simplify(Ls_expr)
+    
     if Ls_expr.is_number:
         Ls_expr = sp.Rational(Ls_expr)
-
+    
     num, den = sp.fraction(Ls_expr)
-
-    has_symbolic = not (num.is_polynomial(s) and den.is_polynomial(s))
+    
+    has_symbolic = not (num.is_polynomial(s) and den.is_polynomial(s) and num.is_constant(s) == False and den.is_constant(s) == False)
     if not has_symbolic:
         try:
             num_poly = sp.Poly(num, s)
@@ -87,7 +87,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
             den_coeffs = [float(c) for c in den_poly.all_coeffs()]
             num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
             FT = control.TransferFunction(num_coeffs, den_coeffs)
-        except Exception:
+        except Exception as e:
             has_symbolic = True
             FT = None
     else:
@@ -173,8 +173,6 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
     return caminho
 
 def plot_polos_zeros(FT):
-    import numpy as np
-    import matplotlib.pyplot as plt
     fig, ax = plt.subplots()
     ax.scatter(np.real(FT.poles()), np.imag(FT.poles()), marker='x', color='red', s=100, label='Polos')
     ax.scatter(np.real(FT.zeros()), np.imag(FT.zeros()), marker='o', color='blue', s=100, facecolors='none', edgecolors='blue', label='Zeros')
