@@ -34,7 +34,9 @@ def parse_edo(edo_str, entrada_str, saida_str):
     eq_str = edo_str.replace('diff', 'sp.Derivative')
     if '=' not in eq_str:
         raise ValueError("A EDO deve conter '=' para separar LHS e RHS.")
-    
+    lhs, rhs = eq_str.split('=')
+    eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
+
     potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
     local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func}
     excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
@@ -42,58 +44,60 @@ def parse_edo(edo_str, entrada_str, saida_str):
         if sym not in excluded and sym not in local_dict:
             local_dict[sym] = sp.symbols(sym)
 
-    lhs, rhs = eq_str.split('=')
-    lhs_expr_sym = sp.sympify(lhs.strip(), locals=local_dict)
-    rhs_expr_sym = sp.sympify(rhs.strip(), locals=local_dict)
+    eq = sp.sympify(eq_str, locals=local_dict)
 
-    s = sp.symbols('s')
+    lhs_expr = sp.sympify(lhs.strip(), locals=local_dict)
+    if not lhs_expr.has(X_func(t)):
+        raise ValueError(f"Lado esquerdo da EDO deve conter a variável de saída '{saida_str}(t)'.")
+
     Xs = sp.Symbol(f'{saida_str}s')
     Fs = sp.Symbol(f'{entrada_str}s')
 
-    laplace_lhs = sp.laplace_transform(lhs_expr_sym, t, s, noconds=True)
-    laplace_rhs = sp.laplace_transform(rhs_expr_sym, t, s, noconds=True)
+    expr_laplace = eq
+    for d in expr_laplace.atoms(sp.Derivative):
+        order = d.derivative_count
+        func_expr = d.expr
+        if func_expr.func == X_func:
+            expr_laplace = expr_laplace.subs(d, sp.Pow(sp.Symbol('s'), order) * Xs)
+        elif func_expr.func == F_func:
+            expr_laplace = expr_laplace.subs(d, sp.Pow(sp.Symbol('s'), order) * Fs)
 
-    subs_dict_lhs = {}
-    subs_dict_rhs = {}
-    for n in range(0, 10):
-        subs_dict_lhs[sp.Derivative(X_func(t), (t, n))] = Xs * s**n
-        subs_dict_rhs[sp.Derivative(F_func(t), (t, n))] = Fs * s**n
-    laplace_lhs = laplace_lhs.subs(subs_dict_lhs)
-    laplace_rhs = laplace_rhs.subs(subs_dict_rhs)
+    expr_laplace = expr_laplace.subs({X_func(t): Xs, F_func(t): Fs})
 
-    collected_lhs = sp.collect(laplace_lhs, [Xs, Fs])
-    collected_rhs = sp.collect(laplace_rhs, [Xs, Fs])
-    
-    coef_Xs = collected_lhs.coeff(Xs) - collected_rhs.coeff(Xs)
-    coef_Fs = collected_rhs.coeff(Fs) - collected_lhs.coeff(Fs)
+    collected_expr = sp.collect(expr_laplace, [Xs, Fs])
+    coef_Xs = collected_expr.coeff(Xs)
+    coef_Fs = collected_expr.coeff(Fs)
 
     if coef_Xs == 0:
         raise ValueError(f"Coeficiente da variável de saída no domínio de Laplace é zero.")
 
-    Ls_expr = coef_Fs / coef_Xs
+    Ls_expr = -coef_Fs / coef_Xs
     Ls_expr = sp.simplify(Ls_expr)
-    
-    if Ls_expr.is_number:
-        Ls_expr = sp.Rational(Ls_expr)
-    
-    num, den = sp.fraction(Ls_expr)
-    
-    has_symbolic = not (num.is_polynomial(s) and den.is_polynomial(s) and num.is_constant(s) == False and den.is_constant(s) == False)
-    if not has_symbolic:
-        try:
-            num_poly = sp.Poly(num, s)
-            den_poly = sp.Poly(den, s)
-            num_coeffs = [float(c) for c in num_poly.all_coeffs()]
-            den_coeffs = [float(c) for c in den_poly.all_coeffs()]
-            num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
-            FT = control.TransferFunction(num_coeffs, den_coeffs)
-        except Exception as e:
-            has_symbolic = True
-            FT = None
-    else:
-        FT = None
 
-    return Ls_expr, FT, has_symbolic
+    num, den = sp.fraction(Ls_expr)
+    num_poly_expr = sp.collect(num, sp.Symbol('s'))
+    den_poly_expr = sp.collect(den, sp.Symbol('s'))
+
+    has_symbolic = False
+    try:
+        num_poly = sp.Poly(num_poly_expr, sp.Symbol('s'))
+        den_poly = sp.Poly(den_poly_expr, sp.Symbol('s'))
+        for c in num_poly.all_coeffs() + den_poly.all_coeffs():
+            if not c.is_number:
+                has_symbolic = True
+                break
+    except Exception:
+        has_symbolic = True
+
+    if has_symbolic:
+        return Ls_expr, None, True
+
+    num_coeffs = [float(c) for c in num_poly.all_coeffs()]
+    den_coeffs = [float(c) for c in den_poly.all_coeffs()]
+    num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
+
+    FT = control.TransferFunction(num_coeffs, den_coeffs)
+    return Ls_expr, FT, False
 
 def ft_to_latex(expr):
     return sp.latex(expr, mul_symbol='dot')
@@ -134,11 +138,16 @@ def sintonia_ziegler_nichols(L, T):
     return Kp, Ki, Kd
 
 def sintonia_oscilacao_forcada(Kc, Tc):
+    
+    
+    # PID Clássico
     Kp = 0.6 * Kc
     Ti = Tc / 2.0
     Td = Tc / 8.0
+    
     Ki = Kp / Ti if Ti != 0 else 0
     Kd = Kp * Td
+
     return Kp, Ki, Kd
 
 def cria_pid_tf(Kp, Ki, Kd):
@@ -173,6 +182,8 @@ def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
     return caminho
 
 def plot_polos_zeros(FT):
+    import numpy as np
+    import matplotlib.pyplot as plt
     fig, ax = plt.subplots()
     ax.scatter(np.real(FT.poles()), np.imag(FT.poles()), marker='x', color='red', s=100, label='Polos')
     ax.scatter(np.real(FT.zeros()), np.imag(FT.zeros()), marker='o', color='blue', s=100, facecolors='none', edgecolors='blue', label='Zeros')
@@ -188,6 +199,15 @@ def plot_polos_zeros(FT):
     plt.savefig(caminho)
     plt.close()
     return caminho
+
+def flatten_and_convert(lst):
+    result = []
+    for c in lst:
+        if hasattr(c, '__iter__') and not isinstance(c, (str, bytes)):
+            result.extend(flatten_and_convert(c))
+        else:
+            result.append(float(c))
+    return result
 
 def tabela_routh(coeficientes):
     coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
