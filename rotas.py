@@ -168,8 +168,6 @@ def simulador():
     warning = None
 
     if request.method == 'POST':
-        session.pop('resultado', None)
-
         edo = request.form.get('edo')
         entrada = request.form.get('entrada')
         saida = request.form.get('saida')
@@ -245,25 +243,9 @@ def simulador():
                 error = f"Erro de entrada ou processamento: {str(ve)}"
             except Exception as e:
                 error = f"Ocorreu um erro inesperado: {str(e)}. Por favor, verifique a EDO e as variáveis."
-        
-        session['resultado'] = resultado
-        session['error'] = error
-        session['warning'] = warning
-        return redirect(url_for('simulador'))
-
-    resultado_da_sessao = session.get('resultado', None)
-    error_da_sessao = session.get('error', None)
-    warning_da_sessao = session.get('warning', None)
     is_admin = session.get('is_admin', False)
+    return render_template('simulador.html', resultado=resultado, error=error, warning=warning, is_admin=is_admin)
 
-    return render_template(
-        'simulador.html',
-        resultado=resultado_da_sessao,
-        error=error_da_sessao,
-        warning=warning_da_sessao,
-        is_admin=is_admin
-    )
-    
 @app.route('/perfil')
 def perfil():
     if 'usuario_logado' not in session:
