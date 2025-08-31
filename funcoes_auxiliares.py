@@ -3,238 +3,146 @@ import control
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-import re
 
-def flatten_and_convert(lst):
-    result = []
-    for c in lst:
-        if hasattr(c, '__iter__') and not isinstance(c, (str, bytes)):
-            result.extend(flatten_and_convert(c))
-        else:
-            try:
-                result.append(float(c))
-            except Exception as e:
-                raise Exception(f"Erro convertendo coeficiente para número: {c} ({e}).")
-    return result
+# Cria diretório estático se não existir
+STATIC_DIR = os.path.join(os.getcwd(), 'static')
+if not os.path.exists(STATIC_DIR):
+    os.makedirs(STATIC_DIR)
 
-def pad_coeffs(num_coeffs, den_coeffs):
-    len_num = len(num_coeffs)
-    len_den = len(den_coeffs)
-    if len_num < len_den:
-        num_coeffs = [0.0] * (len_den - len_num) + num_coeffs
-    elif len_den < len_num:
-        den_coeffs = [0.0] * (len_num - len_den) + den_coeffs
-    return num_coeffs, den_coeffs
-
-def parse_edo(edo_str, entrada_str, saida_str):
-    t = sp.symbols('t', real=True)
-    X_func = sp.Function(saida_str)
-    F_func = sp.Function(entrada_str)
-
-    eq_str = edo_str.replace('diff', 'sp.Derivative')
-    if '=' not in eq_str:
-        raise ValueError("A EDO deve conter '=' para separar LHS e RHS.")
-    
-    # Criar um dicionário local com todos os símbolos necessários
-    potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
-    local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func}
-    excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
-    for sym in potential_symbols:
-        if sym not in excluded and sym not in local_dict:
-            local_dict[sym] = sp.symbols(sym)
-
-    lhs, rhs = eq_str.split('=')
-    eq = sp.sympify(f"({lhs.strip()}) - ({rhs.strip()})", locals=local_dict)
-
-    if not eq.has(X_func(t)):
-        raise ValueError(f"A EDO deve conter a variável de saída '{saida_str}(t)'.")
-
+def parse_edo(edo_str, entrada, saida):
+    """
+    Converte uma string de EDO em função de t para uma função de transferência.
+    Suporta derivadas de qualquer ordem.
+    """
+    t = sp.symbols('t')
     s = sp.symbols('s')
-    Xs = sp.Symbol(f'{saida_str}s')
-    Fs = sp.Symbol(f'{entrada_str}s')
+    y = sp.Function(saida)(t)
+    u = sp.Function(entrada)(t)
 
-    # Substituir os termos de derivada pela transformada de Laplace correspondente
-    expr_laplace = eq
-    for d in expr_laplace.atoms(sp.Derivative):
-        order = d.derivative_count
-        func_expr = d.expr
-        if func_expr.func == X_func:
-            expr_laplace = expr_laplace.subs(d, sp.Pow(s, order) * Xs)
-        elif func_expr.func == F_func:
-            expr_laplace = expr_laplace.subs(d, sp.Pow(s, order) * Fs)
+    # Converte a string em expressão simbólica
+    expr = sp.sympify(edo_str, locals={saida: y, entrada: u, 'diff': sp.diff})
 
-    # Substituir os termos de função no tempo por suas representações no domínio de Laplace
-    expr_laplace = expr_laplace.subs({X_func(t): Xs, F_func(t): Fs})
+    # Extrai coeficientes numéricos ou simbólicos
+    eq = sp.expand(expr)
+    coeffs_y = []
+    max_order = 0
+
+    # Determina a maior ordem de derivada
+    for arg in eq.args if hasattr(eq, 'args') else [eq]:
+        if arg.has(sp.Derivative(y, t)):
+            for deriv in arg.atoms(sp.Derivative):
+                if deriv.args[0] == y:
+                    max_order = max(max_order, deriv.derivative_count if hasattr(deriv, 'derivative_count') else deriv.args[1])
+
+    # Cria vetor de coeficientes da EDO (numeradores e denominadores)
+    coefs_num = []
+    coefs_den = []
+
+    # Para cada ordem, extrai coeficiente de y^(n) e u^(n)
+    for n in range(max_order, -1, -1):
+        deriv_y = sp.Derivative(y, (t, n))
+        coef_y = eq.coeff(deriv_y)
+        coeffs_y.append(coef_y)
+
+    deriv_u = sp.Derivative(u, t, 0)
+    num_expr = eq.subs({sp.Derivative(y, (t, n)): 0 for n in range(max_order+1)})
+    num_expr = num_expr.coeff(u)
     
-    # Coletar os coeficientes de Xs e Fs para montar a FT
-    collected_expr = sp.collect(expr_laplace, [Xs, Fs])
-    coef_Xs = collected_expr.coeff(Xs)
-    coef_Fs = collected_expr.coeff(Fs)
+    # Gera função de transferência simbólica
+    s = sp.symbols('s')
+    num_poly = sum(coef * s**i for i, coef in enumerate(reversed([num_expr])))
+    den_poly = sum(coef * s**i for i, coef in enumerate(reversed(coeffs_y)))
+    FT = control.TransferFunction([float(c.evalf()) if c.is_number else c for c in den_poly.as_coefficients_dict().values()],
+                                  [float(c.evalf()) if c.is_number else c for c in den_poly.as_coefficients_dict().values()])
 
-    if coef_Xs == 0:
-        raise ValueError(f"Coeficiente da variável de saída no domínio de Laplace é zero.")
+    has_symbolic_coeffs = any([not c.is_number for c in coeffs_y])
+    return FT, FT, has_symbolic_coeffs
 
-    Ls_expr = -coef_Fs / coef_Xs
-    Ls_expr = sp.simplify(Ls_expr)
-    
-    # Se a expressão resultante for um número, transforme-a em uma fração
-    if Ls_expr.is_number:
-        Ls_expr = sp.Rational(Ls_expr)
-    
-    num, den = sp.fraction(Ls_expr)
-    
-    # Verificar se a FT contém coeficientes simbólicos
-    has_symbolic = False
-    try:
-        num_poly = sp.Poly(num, s)
-        den_poly = sp.Poly(den, s)
-        for c in num_poly.all_coeffs() + den_poly.all_coeffs():
-            if not c.is_number:
-                has_symbolic = True
-                break
-    except Exception:
-        has_symbolic = True
+def ft_to_latex(ft):
+    """Converte uma função de transferência para LaTeX"""
+    num = ft.num[0][0]
+    den = ft.den[0][0]
+    s = sp.symbols('s')
+    num_poly = sum(coef * s**(len(num)-i-1) for i, coef in enumerate(num))
+    den_poly = sum(coef * s**(len(den)-i-1) for i, coef in enumerate(den))
+    return sp.latex(num_poly/den_poly, mul_symbol='dot')
 
-    if not has_symbolic:
-        try:
-            num_coeffs = [float(c) for c in num_poly.all_coeffs()]
-            den_coeffs = [float(c) for c in den_poly.all_coeffs()]
-            num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
-            FT = control.TransferFunction(num_coeffs, den_coeffs)
-        except Exception:
-            has_symbolic = True
-            FT = None
-    else:
-        FT = None
-
-    return Ls_expr, FT, has_symbolic
-
-def ft_to_latex(expr):
-    return sp.latex(expr, mul_symbol='dot')
-
-def resposta_degrau(FT, tempo=None):
-    if tempo is None:
-        tempo = np.linspace(0, 10, 1000)
-    t, y = control.step_response(FT, T=tempo)
+def resposta_degrau(FT):
+    """Gera resposta ao degrau"""
+    t, y = control.step_response(FT)
     return t, y
 
 def estima_LT(t, y):
-    if len(y) == 0 or np.isclose(y[-1], 0):
-        return 0.01, 0.01
+    """Estima L e T a partir da resposta ao degrau"""
     y_final = y[-1]
-    if y_final == 0:
-        return 0.01, 0.01
-    try:
-        indice_inicio = next(i for i, v in enumerate(y) if v > 0.01 * y_final)
-    except StopIteration:
-        indice_inicio = 0
-    L = t[indice_inicio]
-    y_63 = 0.63 * y_final
-    try:
-        indice_63 = next(i for i, v in enumerate(y) if v >= y_63)
-    except StopIteration:
-        indice_63 = len(y) - 1
-    T = t[indice_63] - L
-    return max(L, 0.01), max(T, 0.01)
+    y_63 = 0.632 * y_final
+    idx_63 = np.argmax(y >= y_63)
+    T = t[idx_63]
+    L = t[0]  # Aproximação inicial
+    return L, T
 
 def sintonia_ziegler_nichols(L, T):
-    if L == 0:
-        L = 0.01
+    """Calcula parâmetros PID via Ziegler-Nichols (resposta ao degrau)"""
     Kp = 1.2 * T / L
     Ti = 2 * L
     Td = 0.5 * L
-    Ki = Kp / Ti if Ti != 0 else 0
+    Ki = Kp / Ti
     Kd = Kp * Td
     return Kp, Ki, Kd
 
 def sintonia_oscilacao_forcada(Kc, Tc):
-    
-    # PID Clássico
+    """Calcula parâmetros PID via oscilação forçada"""
     Kp = 0.6 * Kc
-    Ti = Tc / 2.0
-    Td = Tc / 8.0
-    
-    Ki = Kp / Ti if Ti != 0 else 0
-    Kd = Kp * Td
-
+    Ki = 1.2 * Kp / Tc
+    Kd = 0.075 * Kp * Tc
     return Kp, Ki, Kd
 
 def cria_pid_tf(Kp, Ki, Kd):
+    """Gera função de transferência do PID"""
     s = control.TransferFunction.s
-    return Kp + Ki / s + Kd * s
+    return Kp + Ki/s + Kd*s
 
-def malha_fechada_tf(Gp, Gc):
-    return control.feedback(Gp * Gc, 1)
+def malha_fechada_tf(FT, PID):
+    """Gera a malha fechada com PID"""
+    return control.feedback(PID * FT, 1)
 
-def salvar_grafico_resposta(t, y, nome, rotacao=0, deslocamento=0.0):
-    y = np.array(y) + deslocamento
-    if rotacao == 180:
-        t = -t[::-1]
-        y = -y[::-1]
-    elif rotacao == 90:
-        t, y = -y, t
-    if min(t) < 0:
-        t = t - min(t)
-    if min(y) < 0:
-        y = y - min(y)
-    plt.figure(figsize=(8, 4))
-    plt.plot(t, y, label='Resposta ao Degrau')
-    plt.xlabel('Tempo (s)' if rotacao != 90 else 'Saída')
-    plt.ylabel('Saída' if rotacao != 90 else 'Tempo (s)')
-    plt.title(nome)
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    caminho = os.path.join('static', f'{nome}.png')
+def salvar_grafico_resposta(t, y, nome, deslocamento=0.0):
+    """Salva gráfico de resposta ao degrau"""
+    plt.figure()
+    plt.plot(t, y + deslocamento)
+    plt.title('Resposta ao Degrau')
+    plt.xlabel('Tempo (s)')
+    plt.ylabel('Saída')
+    caminho = os.path.join(STATIC_DIR, f'{nome}.png')
     plt.savefig(caminho)
     plt.close()
     return caminho
 
 def plot_polos_zeros(FT):
-    import numpy as np
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots()
-    ax.scatter(np.real(FT.poles()), np.imag(FT.poles()), marker='x', color='red', s=100, label='Polos')
-    ax.scatter(np.real(FT.zeros()), np.imag(FT.zeros()), marker='o', color='blue', s=100, facecolors='none', edgecolors='blue', label='Zeros')
-    ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
-    ax.axvline(0, color='black', linewidth=0.8, linestyle='--')
-    ax.set_xlabel('Re')
-    ax.set_ylabel('Im')
-    ax.set_title('Diagrama de Polos e Zeros')
-    ax.legend()
-    ax.grid(True, linestyle=':', alpha=0.7)
-    ax.set_aspect('equal', adjustable='box')
-    caminho = os.path.join('static', 'polos_zeros.png')
+    """Gera gráfico de polos e zeros"""
+    plt.figure()
+    control.pzmap(FT, Plot=True, grid=True)
+    caminho = os.path.join(STATIC_DIR, 'pz_map.png')
     plt.savefig(caminho)
     plt.close()
     return caminho
 
 def flatten_and_convert(lst):
-    result = []
-    for c in lst:
-        if hasattr(c, '__iter__') and not isinstance(c, (str, bytes)):
-            result.extend(flatten_and_convert(c))
-        else:
-            result.append(float(c))
-    return result
+    """Flatten lista e converte para float"""
+    return [float(x) for sublist in lst for x in sublist]
 
-def tabela_routh(coeficientes):
-    coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
-    n = len(coeficientes)
-    if n == 0:
-        return np.array([])
-    m = (n + 1) // 2
-    routh = np.zeros((n, m))
-    routh[0, :len(coeficientes[::2])] = coeficientes[::2]
-    if n > 1:
-        routh[1, :len(coeficientes[1::2])] = coeficientes[1::2]
+def tabela_routh(coefs):
+    """Gera tabela de Routh-Hurwitz"""
+    n = len(coefs)
+    routh = np.zeros((n, int(np.ceil(n/2))))
+    routh[0, :len(coefs[::2])] = coefs[::2]
+    routh[1, :len(coefs[1::2])] = coefs[1::2]
+
     for i in range(2, n):
-        if routh[i - 1, 0] == 0:
-            routh[i - 1, 0] = 1e-6
-        for j in range(m - 1):
-            a = routh[i - 2, 0]
-            b = routh[i - 1, 0]
-            c = routh[i - 2, j + 1]
-            d = routh[i - 1, j + 1]
-            routh[i, j] = (b * c - a * d) / b
+        for j in range(0, routh.shape[1]-1):
+            a = routh[i-2,0]
+            b = routh[i-2,j+1]
+            c = routh[i-1,0]
+            d = routh[i-1,j+1]
+            routh[i,j] = (c*b - a*d)/c if c != 0 else 0
     return routh
