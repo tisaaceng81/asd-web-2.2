@@ -44,37 +44,37 @@ def parse_edo(edo_str, entrada_str, saida_str):
             local_dict[sym] = sp.symbols(sym)
 
     lhs, rhs = eq_str.split('=')
-    
-    # Simbolizar as expressões do lado esquerdo e direito
-    lhs_expr_sym = sp.sympify(lhs.strip(), locals=local_dict)
-    rhs_expr_sym = sp.sympify(rhs.strip(), locals=local_dict)
+    eq = sp.sympify(f"({lhs.strip()}) - ({rhs.strip()})", locals=local_dict)
 
-    if not lhs_expr_sym.has(X_func(t)):
-        raise ValueError(f"Lado esquerdo da EDO deve conter a variável de saída '{saida_str}(t)'.")
+    if not eq.has(X_func(t)):
+        raise ValueError(f"A EDO deve conter a variável de saída '{saida_str}(t)'.")
 
     s = sp.symbols('s')
     Xs = sp.Symbol(f'{saida_str}s')
     Fs = sp.Symbol(f'{entrada_str}s')
 
-    # Aplicar a transformada de Laplace
-    laplace_lhs = sp.laplace_transform(lhs_expr_sym, t, s, noconds=True)
-    laplace_rhs = sp.laplace_transform(rhs_expr_sym, t, s, noconds=True)
+    # Substituir os termos de derivada pela transformada de Laplace correspondente
+    expr_laplace = eq
+    for d in expr_laplace.atoms(sp.Derivative):
+        order = d.derivative_count
+        func_expr = d.expr
+        if func_expr.func == X_func:
+            expr_laplace = expr_laplace.subs(d, sp.Pow(s, order) * Xs)
+        elif func_expr.func == F_func:
+            expr_laplace = expr_laplace.subs(d, sp.Pow(s, order) * Fs)
 
-    # Substituir os símbolos da transformada para a forma Xs e Fs
-    laplace_lhs = laplace_lhs.subs({sp.Function(saida_str)(s): Xs, sp.Function(entrada_str)(s): Fs})
-    laplace_rhs = laplace_rhs.subs({sp.Function(saida_str)(s): Xs, sp.Function(entrada_str)(s): Fs})
-
-    # Coletar os coeficientes de Xs e Fs para montar a FT
-    collected_lhs = sp.collect(laplace_lhs, [Xs, Fs])
-    collected_rhs = sp.collect(laplace_rhs, [Xs, Fs])
+    # Substituir os termos de função no tempo por suas representações no domínio de Laplace
+    expr_laplace = expr_laplace.subs({X_func(t): Xs, F_func(t): Fs})
     
-    coef_Xs = collected_lhs.coeff(Xs) - collected_rhs.coeff(Xs)
-    coef_Fs = collected_rhs.coeff(Fs) - collected_lhs.coeff(Fs)
+    # Coletar os coeficientes de Xs e Fs para montar a FT
+    collected_expr = sp.collect(expr_laplace, [Xs, Fs])
+    coef_Xs = collected_expr.coeff(Xs)
+    coef_Fs = collected_expr.coeff(Fs)
 
     if coef_Xs == 0:
         raise ValueError(f"Coeficiente da variável de saída no domínio de Laplace é zero.")
 
-    Ls_expr = coef_Fs / coef_Xs
+    Ls_expr = -coef_Fs / coef_Xs
     Ls_expr = sp.simplify(Ls_expr)
     
     # Se a expressão resultante for um número, transforme-a em uma fração
@@ -84,17 +84,24 @@ def parse_edo(edo_str, entrada_str, saida_str):
     num, den = sp.fraction(Ls_expr)
     
     # Verificar se a FT contém coeficientes simbólicos
-    has_symbolic = not (num.is_polynomial(s) and den.is_polynomial(s) and num.is_constant(s) == False and den.is_constant(s) == False)
+    has_symbolic = False
+    try:
+        num_poly = sp.Poly(num, s)
+        den_poly = sp.Poly(den, s)
+        for c in num_poly.all_coeffs() + den_poly.all_coeffs():
+            if not c.is_number:
+                has_symbolic = True
+                break
+    except Exception:
+        has_symbolic = True
+
     if not has_symbolic:
-        # Se for um sistema com coeficientes numéricos, continue a análise
         try:
-            num_poly = sp.Poly(num, s)
-            den_poly = sp.Poly(den, s)
             num_coeffs = [float(c) for c in num_poly.all_coeffs()]
             den_coeffs = [float(c) for c in den_poly.all_coeffs()]
             num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
             FT = control.TransferFunction(num_coeffs, den_coeffs)
-        except Exception as e:
+        except Exception:
             has_symbolic = True
             FT = None
     else:
