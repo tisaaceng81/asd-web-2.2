@@ -31,10 +31,14 @@ def parse_edo(edo_str, entrada_str, saida_str):
     X_func = sp.Function(saida_str)
     F_func = sp.Function(entrada_str)
 
-    eq_str = edo_str.replace('diff', 'sp.Derivative')
+    # Substituir diff(...) por sp.Derivative(...)
+    eq_str = re.sub(r'diff\(\s*(\w+)\(t\)\s*,\s*t\s*(?:,\s*(\d+)\s*)?\)', 
+                    lambda m: f"sp.Derivative({m.group(1)}(t), t, {m.group(2)})" if m.group(2) else f"sp.Derivative({m.group(1)}(t), t)", 
+                    edo_str)
+
     if '=' not in eq_str:
         raise ValueError("A EDO deve conter '=' para separar LHS e RHS.")
-    
+
     potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
     local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func}
     excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
@@ -50,26 +54,31 @@ def parse_edo(edo_str, entrada_str, saida_str):
         raise ValueError(f"Lado esquerdo da EDO deve conter a variável de saída '{saida_str}(t)'.")
 
     s = sp.symbols('s')
-    Xs = sp.Function(saida_str)(s)
-    Fs = sp.Function(entrada_str)(s)
+    Xs = sp.Symbol(f'{saida_str}s')
+    Fs = sp.Symbol(f'{entrada_str}s')
 
     laplace_lhs = sp.laplace_transform(lhs_expr_sym, t, s, noconds=True)
     laplace_rhs = sp.laplace_transform(rhs_expr_sym, t, s, noconds=True)
 
-    laplace_lhs = laplace_lhs.subs({X_func(t): Xs})
-    laplace_rhs = laplace_rhs.subs({F_func(t): Fs})
+    laplace_lhs = laplace_lhs.subs({X_func(t): Xs, F_func(t): Fs})
+    laplace_rhs = laplace_rhs.subs({X_func(t): Xs, F_func(t): Fs})
 
-    coef_Xs = laplace_lhs.coeff(Xs) - laplace_rhs.coeff(Xs)
-    coef_Fs = laplace_rhs.coeff(Fs) - laplace_lhs.coeff(Fs)
+    collected_lhs = sp.collect(laplace_lhs, [Xs, Fs])
+    collected_rhs = sp.collect(laplace_rhs, [Xs, Fs])
+
+    coef_Xs = collected_lhs.coeff(Xs) - collected_rhs.coeff(Xs)
+    coef_Fs = collected_rhs.coeff(Fs) - collected_lhs.coeff(Fs)
 
     if coef_Xs == 0:
         raise ValueError(f"Coeficiente da variável de saída no domínio de Laplace é zero.")
 
     Ls_expr = sp.simplify(coef_Fs / coef_Xs)
+    if Ls_expr.is_number:
+        Ls_expr = sp.Rational(Ls_expr)
+
     num, den = sp.fraction(Ls_expr)
 
-    has_symbolic = not (num.is_polynomial(s) and den.is_polynomial(s) and num.is_constant(s) == False and den.is_constant(s) == False)
-    
+    has_symbolic = not (num.is_polynomial(s) and den.is_polynomial(s))
     if not has_symbolic:
         try:
             num_poly = sp.Poly(num, s)
@@ -78,7 +87,7 @@ def parse_edo(edo_str, entrada_str, saida_str):
             den_coeffs = [float(c) for c in den_poly.all_coeffs()]
             num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
             FT = control.TransferFunction(num_coeffs, den_coeffs)
-        except:
+        except Exception:
             has_symbolic = True
             FT = None
     else:
@@ -181,15 +190,6 @@ def plot_polos_zeros(FT):
     plt.savefig(caminho)
     plt.close()
     return caminho
-
-def flatten_and_convert(lst):
-    result = []
-    for c in lst:
-        if hasattr(c, '__iter__') and not isinstance(c, (str, bytes)):
-            result.extend(flatten_and_convert(c))
-        else:
-            result.append(float(c))
-    return result
 
 def tabela_routh(coeficientes):
     coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
