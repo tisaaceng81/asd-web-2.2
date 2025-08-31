@@ -138,8 +138,6 @@ def sintonia_ziegler_nichols(L, T):
     return Kp, Ki, Kd
 
 def sintonia_oscilacao_forcada(Kc, Tc):
-    
-    
     # PID Clássico
     Kp = 0.6 * Kc
     Ti = Tc / 2.0
@@ -200,14 +198,14 @@ def plot_polos_zeros(FT):
     plt.close()
     return caminho
 
-def flatten_and_convert(lst):
-    result = []
-    for c in lst:
-        if hasattr(c, '__iter__') and not isinstance(c, (str, bytes)):
-            result.extend(flatten_and_convert(c))
-        else:
-            result.append(float(c))
-    return result
+def tf_to_sympy_tf(tf_obj):
+    import sympy as sp
+    num = tf_obj.num[0][0]
+    den = tf_obj.den[0][0]
+    s_sym = sp.symbols('s')
+    num_poly = sum(coef * s_sym**(len(num)-i-1) for i, coef in enumerate(num))
+    den_poly = sum(coef * s_sym**(len(den)-i-1) for i, coef in enumerate(den))
+    return num_poly / den_poly
 
 def tabela_routh(coeficientes):
     coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
