@@ -31,37 +31,40 @@ def parse_edo(edo_str, entrada_str, saida_str):
     X_func = sp.Function(saida_str)
     F_func = sp.Function(entrada_str)
 
-    eq_str = edo_str.replace('diff', 'sp.Derivative')
+    # Adiciona 'diff' ao local_dict para que sympify o reconheça.
+    local_dict = {'sp': sp, 't': t, 'diff': sp.Derivative, saida_str: X_func, entrada_str: F_func}
+    
+    eq_str = edo_str
+    
     if '=' not in eq_str:
         raise ValueError("A EDO deve conter '=' para separar LHS e RHS.")
+    
     lhs, rhs = eq_str.split('=')
     eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
-
-    potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
-    local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func}
-    excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
-    for sym in potential_symbols:
-        if sym not in excluded and sym not in local_dict:
-            local_dict[sym] = sp.symbols(sym)
-
+    
     eq = sp.sympify(eq_str, locals=local_dict)
-
-    lhs_expr = sp.sympify(lhs.strip(), locals=local_dict)
-    if not lhs_expr.has(X_func(t)):
+    
+    if not any(f.func == X_func for f in eq.atoms(sp.Function)):
         raise ValueError(f"Lado esquerdo da EDO deve conter a variável de saída '{saida_str}(t)'.")
 
     Xs = sp.Symbol(f'{saida_str}s')
     Fs = sp.Symbol(f'{entrada_str}s')
-
+    
     expr_laplace = eq
-    for d in expr_laplace.atoms(sp.Derivative):
-        order = d.derivative_count
-        func_expr = d.expr
-        if func_expr.func == X_func:
-            expr_laplace = expr_laplace.subs(d, sp.Pow(sp.Symbol('s'), order) * Xs)
-        elif func_expr.func == F_func:
-            expr_laplace = expr_laplace.subs(d, sp.Pow(sp.Symbol('s'), order) * Fs)
+    
+    # Substitui as derivadas por seus equivalentes em Laplace.
+    # Usa sp.Derivative como a função, o que é mais robusto.
+    expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 4), sp.Symbol('s')**4 * Xs)
+    expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 3), sp.Symbol('s')**3 * Xs)
+    expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 2), sp.Symbol('s')**2 * Xs)
+    expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t), sp.Symbol('s') * Xs)
+    
+    expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 4), sp.Symbol('s')**4 * Fs)
+    expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 3), sp.Symbol('s')**3 * Fs)
+    expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 2), sp.Symbol('s')**2 * Fs)
+    expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t), sp.Symbol('s') * Fs)
 
+    # Substitui as funções por suas variáveis de Laplace
     expr_laplace = expr_laplace.subs({X_func(t): Xs, F_func(t): Fs})
 
     collected_expr = sp.collect(expr_laplace, [Xs, Fs])
@@ -75,25 +78,17 @@ def parse_edo(edo_str, entrada_str, saida_str):
     Ls_expr = sp.simplify(Ls_expr)
 
     num, den = sp.fraction(Ls_expr)
-    num_poly_expr = sp.collect(num, sp.Symbol('s'))
-    den_poly_expr = sp.collect(den, sp.Symbol('s'))
+    num_poly = sp.Poly(num, sp.Symbol('s'))
+    den_poly = sp.Poly(den, sp.Symbol('s'))
 
     has_symbolic = False
     try:
-        num_poly = sp.Poly(num_poly_expr, sp.Symbol('s'))
-        den_poly = sp.Poly(den_poly_expr, sp.Symbol('s'))
-        for c in num_poly.all_coeffs() + den_poly.all_coeffs():
-            if not c.is_number:
-                has_symbolic = True
-                break
+        num_coeffs = [float(c) for c in num_poly.all_coeffs()]
+        den_coeffs = [float(c) for c in den_poly.all_coeffs()]
     except Exception:
         has_symbolic = True
-
-    if has_symbolic:
         return Ls_expr, None, True
 
-    num_coeffs = [float(c) for c in num_poly.all_coeffs()]
-    den_coeffs = [float(c) for c in den_poly.all_coeffs()]
     num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
 
     FT = control.TransferFunction(num_coeffs, den_coeffs)
@@ -138,8 +133,6 @@ def sintonia_ziegler_nichols(L, T):
     return Kp, Ki, Kd
 
 def sintonia_oscilacao_forcada(Kc, Tc):
-    
-    
     # PID Clássico
     Kp = 0.6 * Kc
     Ti = Tc / 2.0
@@ -200,14 +193,14 @@ def plot_polos_zeros(FT):
     plt.close()
     return caminho
 
-def flatten_and_convert(lst):
-    result = []
-    for c in lst:
-        if hasattr(c, '__iter__') and not isinstance(c, (str, bytes)):
-            result.extend(flatten_and_convert(c))
-        else:
-            result.append(float(c))
-    return result
+def tf_to_sympy_tf(tf_obj):
+    import sympy as sp
+    num = tf_obj.num[0][0]
+    den = tf_obj.den[0][0]
+    s_sym = sp.symbols('s')
+    num_poly = sum(coef * s_sym**(len(num)-i-1) for i, coef in enumerate(num))
+    den_poly = sum(coef * s_sym**(len(den)-i-1) for i, coef in enumerate(den))
+    return num_poly / den_poly
 
 def tabela_routh(coeficientes):
     coeficientes = [float(c[0]) if isinstance(c, list) else float(c) for c in coeficientes]
