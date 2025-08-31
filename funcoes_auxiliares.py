@@ -31,19 +31,26 @@ def parse_edo(edo_str, entrada_str, saida_str):
     X_func = sp.Function(saida_str)
     F_func = sp.Function(entrada_str)
 
-    # Adiciona 'diff' ao local_dict para que sympify o reconheça.
-    local_dict = {'sp': sp, 't': t, 'diff': sp.Derivative, saida_str: X_func, entrada_str: F_func}
-    
-    eq_str = edo_str
+    # Verifica se a sintaxe é 'diff' e substitui por 'sp.Derivative'
+    eq_str = edo_str.replace('diff', 'sp.Derivative')
     
     if '=' not in eq_str:
         raise ValueError("A EDO deve conter '=' para separar LHS e RHS.")
     
     lhs, rhs = eq_str.split('=')
     eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
+
+    potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
+    local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func, 'Derivative': sp.Derivative}
+    excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
     
+    for sym in potential_symbols:
+        if sym not in excluded and sym not in local_dict:
+            local_dict[sym] = sp.symbols(sym)
+
     eq = sp.sympify(eq_str, locals=local_dict)
     
+    # Verifica se a EDO contém a variável de saída
     if not any(f.func == X_func for f in eq.atoms(sp.Function)):
         raise ValueError(f"Lado esquerdo da EDO deve conter a variável de saída '{saida_str}(t)'.")
 
@@ -54,11 +61,13 @@ def parse_edo(edo_str, entrada_str, saida_str):
     
     # Substitui as derivadas por seus equivalentes em Laplace.
     # Usa sp.Derivative como a função, o que é mais robusto.
+    expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 5), sp.Symbol('s')**5 * Xs)
     expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 4), sp.Symbol('s')**4 * Xs)
     expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 3), sp.Symbol('s')**3 * Xs)
     expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 2), sp.Symbol('s')**2 * Xs)
     expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t), sp.Symbol('s') * Xs)
     
+    expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 5), sp.Symbol('s')**5 * Fs)
     expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 4), sp.Symbol('s')**4 * Fs)
     expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 3), sp.Symbol('s')**3 * Fs)
     expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 2), sp.Symbol('s')**2 * Fs)
