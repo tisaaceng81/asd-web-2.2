@@ -168,6 +168,9 @@ def simulador():
     warning = None
 
     if request.method == 'POST':
+        # Limpa qualquer dado de resultado anterior na sessão
+        session.pop('resultado', None)
+
         edo = request.form.get('edo')
         entrada = request.form.get('entrada')
         saida = request.form.get('saida')
@@ -243,63 +246,23 @@ def simulador():
                 error = f"Erro de entrada ou processamento: {str(ve)}"
             except Exception as e:
                 error = f"Ocorreu um erro inesperado: {str(e)}. Por favor, verifique a EDO e as variáveis."
-    is_admin = session.get('is_admin', False)
-    return render_template('simulador.html', resultado=resultado, error=error, warning=warning, is_admin=is_admin)
-
-@app.route('/perfil')
-def perfil():
-    if 'usuario_logado' not in session:
-        flash('Faça login para acessar o perfil.', 'warning')
-        return redirect(url_for('login'))
-
-    user = User.query.filter_by(email=session['usuario_logado']).first()
-    if user:
-        is_admin = user.is_admin
-        return render_template('perfil.html', usuario={'nome': user.nome}, email=user.email, is_admin=is_admin)
-    else:
-        flash('Usuário não encontrado.')
-        return redirect(url_for('logout'))
-
-@app.route('/alterar_senha', methods=['GET', 'POST'])
-def alterar_senha():
-    if 'usuario_logado' not in session:
-        flash('Faça login para alterar a senha.', 'warning')
-        return redirect(url_for('login'))
-
-    if request.method == 'POST':
-        senha_atual = request.form.get('senha_atual')
-        nova_senha = request.form.get('nova_senha')
-        confirmar_senha = request.form.get('confirmar_senha')
         
-        user = User.query.filter_by(email=session['usuario_logado']).first()
-        if not user or not check_password_hash(user.senha, senha_atual):
-            flash('Senha atual incorreta.', 'danger')
-            return redirect(url_for('alterar_senha'))
+        # Salva o resultado na sessão
+        session['resultado'] = resultado
+        session['error'] = error
+        session['warning'] = warning
+        return redirect(url_for('simulador'))
 
-        if nova_senha != confirmar_senha:
-            flash('Nova senha e confirmação não conferem.', 'danger')
-            return redirect(url_for('alterar_senha'))
-        
-        if not nova_senha:
-            flash('A nova senha não pode ser vazia.', 'danger')
-            return redirect(url_for('alterar_senha'))
-
-        user.senha = generate_password_hash(nova_senha, method='pbkdf2:sha256')
-        db.session.commit()
-        
-        flash('Senha alterada com sucesso.', 'success')
-        return redirect(url_for('perfil'))
-
+    # Se o método for GET, exibe os resultados da sessão
+    resultado_da_sessao = session.get('resultado', None)
+    error_da_sessao = session.get('error', None)
+    warning_da_sessao = session.get('warning', None)
     is_admin = session.get('is_admin', False)
-    return render_template('alterar_senha.html', is_admin=is_admin)
 
-@app.route('/funcao_transferencia')
-def funcao_transferencia():
-    ft_latex = session.get('ft_latex', "Função de Transferência não disponível.")
-    is_admin = session.get('is_admin', False)
-    return render_template('transferencia.html', ft_latex=ft_latex, is_admin=is_admin)
-
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5050))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    return render_template(
+        'simulador.html',
+        resultado=resultado_da_sessao,
+        error=error_da_sessao,
+        warning=warning_da_sessao,
+        is_admin=is_admin
+    )
