@@ -31,37 +31,43 @@ def parse_edo(edo_str, entrada_str, saida_str):
     X_func = sp.Function(saida_str)
     F_func = sp.Function(entrada_str)
 
+    # Verifica se a sintaxe é 'diff' e substitui por 'sp.Derivative'
     eq_str = edo_str.replace('diff', 'sp.Derivative')
+    
     if '=' not in eq_str:
         raise ValueError("A EDO deve conter '=' para separar LHS e RHS.")
+    
     lhs, rhs = eq_str.split('=')
     eq_str = f"({lhs.strip()}) - ({rhs.strip()})"
 
     potential_symbols = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', eq_str))
-    local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func}
+    local_dict = {'sp': sp, 't': t, saida_str: X_func, entrada_str: F_func, 'Derivative': sp.Derivative}
     excluded = {'t', 'diff', 'sp', 'Derivative', entrada_str, saida_str}
+    
     for sym in potential_symbols:
         if sym not in excluded and sym not in local_dict:
             local_dict[sym] = sp.symbols(sym)
 
     eq = sp.sympify(eq_str, locals=local_dict)
-
-    lhs_expr = sp.sympify(lhs.strip(), locals=local_dict)
-    if not lhs_expr.has(X_func(t)):
+    
+    # Verifica se a EDO contém a variável de saída
+    if not any(f.func == X_func for f in eq.atoms(sp.Function)):
         raise ValueError(f"Lado esquerdo da EDO deve conter a variável de saída '{saida_str}(t)'.")
 
     Xs = sp.Symbol(f'{saida_str}s')
     Fs = sp.Symbol(f'{entrada_str}s')
-
+    
     expr_laplace = eq
+    # Substitui as derivadas por seus equivalentes em Laplace
     for d in expr_laplace.atoms(sp.Derivative):
         order = d.derivative_count
-        func_expr = d.expr
+        func_expr = d.args[0]
         if func_expr.func == X_func:
             expr_laplace = expr_laplace.subs(d, sp.Pow(sp.Symbol('s'), order) * Xs)
         elif func_expr.func == F_func:
             expr_laplace = expr_laplace.subs(d, sp.Pow(sp.Symbol('s'), order) * Fs)
 
+    # Substitui as funções por suas variáveis de Laplace
     expr_laplace = expr_laplace.subs({X_func(t): Xs, F_func(t): Fs})
 
     collected_expr = sp.collect(expr_laplace, [Xs, Fs])
@@ -82,18 +88,15 @@ def parse_edo(edo_str, entrada_str, saida_str):
     try:
         num_poly = sp.Poly(num_poly_expr, sp.Symbol('s'))
         den_poly = sp.Poly(den_poly_expr, sp.Symbol('s'))
-        for c in num_poly.all_coeffs() + den_poly.all_coeffs():
-            if not c.is_number:
-                has_symbolic = True
-                break
+        
+        # Obtém todos os coeficientes, incluindo os zeros
+        num_coeffs = [float(c) for c in num_poly.all_coeffs()]
+        den_coeffs = [float(c) for c in den_poly.all_coeffs()]
+
     except Exception:
         has_symbolic = True
-
-    if has_symbolic:
         return Ls_expr, None, True
 
-    num_coeffs = [float(c) for c in num_poly.all_coeffs()]
-    den_coeffs = [float(c) for c in den_poly.all_coeffs()]
     num_coeffs, den_coeffs = pad_coeffs(num_coeffs, den_coeffs)
 
     FT = control.TransferFunction(num_coeffs, den_coeffs)
