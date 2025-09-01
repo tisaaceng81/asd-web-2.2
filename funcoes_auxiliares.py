@@ -61,17 +61,16 @@ def parse_edo(edo_str, entrada_str, saida_str):
     
     # Substitui as derivadas por seus equivalentes em Laplace.
     # Usa sp.Derivative como a função, o que é mais robusto.
-    expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 5), sp.Symbol('s')**5 * Xs)
-    expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 4), sp.Symbol('s')**4 * Xs)
-    expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 3), sp.Symbol('s')**3 * Xs)
-    expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t, 2), sp.Symbol('s')**2 * Xs)
-    expr_laplace = expr_laplace.subs(sp.Derivative(X_func(t), t), sp.Symbol('s') * Xs)
+    derivatives = list(expr_laplace.atoms(sp.Derivative))
+    derivatives.sort(key=lambda d: d.derivative_count, reverse=True)
     
-    expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 5), sp.Symbol('s')**5 * Fs)
-    expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 4), sp.Symbol('s')**4 * Fs)
-    expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 3), sp.Symbol('s')**3 * Fs)
-    expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t, 2), sp.Symbol('s')**2 * Fs)
-    expr_laplace = expr_laplace.subs(sp.Derivative(F_func(t), t), sp.Symbol('s') * Fs)
+    for d in derivatives:
+        order = d.derivative_count
+        func_expr = d.args[0]
+        if func_expr.func == X_func:
+            expr_laplace = expr_laplace.subs(d, sp.Symbol('s')**order * Xs)
+        elif func_expr.func == F_func:
+            expr_laplace = expr_laplace.subs(d, sp.Symbol('s')**order * Fs)
 
     # Substitui as funções por suas variáveis de Laplace
     expr_laplace = expr_laplace.subs({X_func(t): Xs, F_func(t): Fs})
