@@ -273,7 +273,9 @@
         {% if resultado %}
             <div class="math-container">
                 <h3>Função de Transferência Calculada</h3>
-                $${{ resultado.ft_latex|safe }}$$
+                <span>
+                    $${{ resultado.ft_latex|safe }}$$
+                </span>
             </div>
 
             {% if resultado.is_symbolic %}
