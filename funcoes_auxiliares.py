@@ -4,6 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import re
+from sympy.abc import s, K
+from sympy import *
 
 def flatten_and_convert(lst):
     result = []
@@ -60,7 +62,6 @@ def parse_edo(edo_str, entrada_str, saida_str):
     expr_laplace = eq
     
     # Substitui as derivadas por seus equivalentes em Laplace.
-    # Usa sp.Derivative como a função, o que é mais robusto.
     derivatives = list(expr_laplace.atoms(sp.Derivative))
     derivatives.sort(key=lambda d: d.derivative_count, reverse=True)
     
@@ -101,6 +102,19 @@ def parse_edo(edo_str, entrada_str, saida_str):
 
     FT = control.TransferFunction(num_coeffs, den_coeffs)
     return Ls_expr, FT, False
+
+def calcula_kc_tc_automaticamente(den_coeffs):
+    """
+    Calcula Kc e Tc usando o critério de Routh-Hurwitz para uma FT de 3ª ordem.
+    (A função pode ser estendida para outras ordens)
+    """
+    # Exemplo para FT de 3ª ordem. Adapte a ordem para o seu uso.
+    a3, a2, a1, a0 = den_coeffs
+    
+    kc = (a2 * a1 - a0) / 1.0
+    tc = 2*pi / (a1 / 1.0)**(1/2) # Adapte a formula do TC para a sua FT
+    
+    return kc, tc
 
 def ft_to_latex(expr):
     return sp.latex(expr, mul_symbol='dot')
