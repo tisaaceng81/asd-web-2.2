@@ -6,7 +6,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from funcoes_auxiliares import (
     parse_edo, ft_to_latex, resposta_degrau, estima_LT, sintonia_ziegler_nichols,
     sintonia_oscilacao_forcada, cria_pid_tf, malha_fechada_tf, salvar_grafico_resposta,
-    plot_polos_zeros, flatten_and_convert, tabela_routh, calcula_kc_tc_automaticamente
+    plot_polos_zeros, flatten_and_convert, tabela_routh
 )
 
 app = Flask(__name__)
@@ -168,14 +168,10 @@ def simulador():
     warning = None
 
     if request.method == 'POST':
-        session.pop('resultado', None)
-
         edo = request.form.get('edo')
         entrada = request.form.get('entrada')
         saida = request.form.get('saida')
         metodo_sintonia = request.form.get('metodo_sintonia')
-        kc = request.form.get('kc')
-        tc = request.form.get('tc')
 
         if not edo or not entrada or not saida:
             error = "Por favor, preencha todos os campos da Equação Diferencial Ordinária, Variável de Entrada e Variável de Saída."
@@ -202,23 +198,9 @@ def simulador():
                         Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
                         img_resposta_aberta_path = salvar_grafico_resposta(t_open, y_open, 'resposta_malha_aberta', deslocamento=0.0)
                     elif metodo_sintonia == 'oscilacao':
-                        if not kc or not tc:
-                            # Caso de cálculo automático
-                            kc_auto, tc_auto = calcula_kc_tc_automaticamente(FT.den[0])
-                            if kc_auto is None or tc_auto is None:
-                                error = "Não foi possível calcular Kc e Tc automaticamente. O sistema pode ser instável ou a EDO não tem a forma esperada."
-                                resultado = None
-                                session['error'] = error
-                                return redirect(url_for('simulador'))
-                            kc_final = kc_auto
-                            tc_final = tc_auto
-                            warning = "Kc e Tc foram calculados automaticamente."
-                        else:
-                            # Caso de inserção manual
-                            kc_final = float(kc)
-                            tc_final = float(tc)
-
-                        Kp, Ki, Kd = sintonia_oscilacao_forcada(kc_final, tc_final)
+                        kc = float(request.form.get('kc'))
+                        tc = float(request.form.get('tc'))
+                        Kp, Ki, Kd = sintonia_oscilacao_forcada(kc, tc)
                     else:
                         raise ValueError("Método de sintonia inválido.")
                         
@@ -261,25 +243,9 @@ def simulador():
                 error = f"Erro de entrada ou processamento: {str(ve)}"
             except Exception as e:
                 error = f"Ocorreu um erro inesperado: {str(e)}. Por favor, verifique a EDO e as variáveis."
-        
-        session['resultado'] = resultado
-        session['error'] = error
-        session['warning'] = warning
-        return redirect(url_for('simulador'))
-
-    resultado_da_sessao = session.get('resultado', None)
-    error_da_sessao = session.get('error', None)
-    warning_da_sessao = session.get('warning', None)
     is_admin = session.get('is_admin', False)
+    return render_template('simulador.html', resultado=resultado, error=error, warning=warning, is_admin=is_admin)
 
-    return render_template(
-        'simulador.html',
-        resultado=resultado_da_sessao,
-        error=error_da_sessao,
-        warning=warning_da_sessao,
-        is_admin=is_admin
-    )
-    
 @app.route('/perfil')
 def perfil():
     if 'usuario_logado' not in session:
