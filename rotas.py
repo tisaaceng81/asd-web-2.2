@@ -1,7 +1,9 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from weasyprint import HTML
+from io import BytesIO
 
 from funcoes_auxiliares import (
     parse_edo, ft_to_latex, resposta_degrau, estima_LT, sintonia_ziegler_nichols,
@@ -299,6 +301,72 @@ def funcao_transferencia():
     is_admin = session.get('is_admin', False)
     return render_template('transferencia.html', ft_latex=ft_latex, is_admin=is_admin)
 
+@app.route('/gerar_pdf', methods=['POST'])
+def gerar_pdf():
+    if 'usuario_logado' not in session:
+        return redirect(url_for('login'))
+
+    try:
+        edo = request.form.get('edo')
+        entrada = request.form.get('entrada')
+        saida = request.form.get('saida')
+        metodo_sintonia = request.form.get('metodo_sintonia')
+        kc_str = request.form.get('kc', '')
+        tc_str = request.form.get('tc', '')
+
+        Ls_expr, FT, has_symbolic_coeffs = parse_edo(edo, entrada, saida)
+        
+        resultado_pdf = {
+            'edo': edo,
+            'entrada': entrada,
+            'saida': saida,
+            'ft_latex': ft_to_latex(Ls_expr),
+            'method': metodo_sintonia,
+            'is_symbolic': has_symbolic_coeffs
+        }
+
+        if not has_symbolic_coeffs:
+            Kp, Ki, Kd = 0, 0, 0
+            
+            if metodo_sintonia == 'degrau':
+                t_open, y_open = resposta_degrau(FT)
+                L, T = estima_LT(t_open, y_open)
+                Kp, Ki, Kd = sintonia_ziegler_nichols(L, T)
+                resultado_pdf['L'] = L
+                resultado_pdf['T'] = T
+            elif metodo_sintonia == 'oscilacao':
+                kc = float(kc_str)
+                tc = float(tc_str)
+                Kp, Ki, Kd = sintonia_oscilacao_forcada(kc, tc)
+                resultado_pdf['kc'] = kc
+                resultado_pdf['tc'] = tc
+            
+            pid = cria_pid_tf(Kp, Ki, Kd)
+            mf = malha_fechada_tf(FT, pid)
+
+            t_closed, y_closed = resposta_degrau(mf)
+
+            den_coefs = flatten_and_convert(mf.den[0])
+            routh_table = tabela_routh(den_coefs)
+
+            resultado_pdf.update({
+                'pid_latex': ft_to_latex(pid),
+                'mf_latex': ft_to_latex(mf),
+                'Kp': Kp,
+                'Ki': Ki,
+                'Kd': Kd,
+                'routh_table': routh_table.tolist()
+            })
+
+        html_string = render_template('relatorio_template.html', resultado=resultado_pdf, full_path=request.url_root)
+        
+        pdf_file = HTML(string=html_string).write_pdf()
+
+        return send_file(BytesIO(pdf_file), download_name='relatorio_simulador.pdf', as_attachment=True, mimetype='application/pdf')
+
+    except Exception as e:
+        flash(f'Ocorreu um erro ao gerar o PDF: {str(e)}', 'danger')
+        return redirect(url_for('simulador'))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5050))
