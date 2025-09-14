@@ -230,13 +230,3 @@ def tabela_routh(coeficientes):
             d = routh[i - 1, j + 1]
             routh[i, j] = (b * c - a * d) / b
     return routh
-
-def salvar_eq_latex(latex_str, nome):
-    plt.rcParams['text.usetex'] = True
-    fig = plt.figure(figsize=(10, 2))
-    fig.patch.set_facecolor('white')
-    text = fig.text(0.5, 0.5, f'${latex_str}$', ha='center', va='center', fontsize=20, color='#007bff')
-    bbox = text.get_tightbbox(fig.canvas.get_renderer()).padded(0.1)
-    fig.savefig(f'static/{nome}.png', bbox_inches=bbox, dpi=300, transparent=False)
-    plt.close(fig)
-    return os.path.join('static', f'{nome}.png')
