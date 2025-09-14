@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8" />
+    <title>Relatório do Simulador</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
+        h1, h2, h3 { color: #007bff; text-align: center; }
+        .section { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        .math-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            font-size: 1.5rem;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        img { display: block; max-width: 100%; height: auto; margin: 10px auto; }
+        ul { list-style-type: none; padding: 0; }
+        li strong { color: #0056b3; }
+        .table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>Relatório do Simulador</h1>
+    
+    <div class="section">
+        <h2>Entradas do Simulador</h2>
+        <p><strong>EDO:</strong> {{ resultado.edo }}</p>
+        <p><strong>Variável de Entrada:</strong> {{ resultado.entrada }}</p>
+        <p><strong>Variável de Saída:</strong> {{ resultado.saida }}</p>
+        <p><strong>Método de Sintonia PID:</strong> {{ "Resposta ao Degrau" if resultado.method == "degrau" else "Oscilação Forçada" }}</p>
+        {% if resultado.method == "oscilacao" %}
+        <p><strong>Ganho Crítico (Kc):</strong> {{ resultado.kc }}</p>
+        <p><strong>Período de Oscilação (Tc):</strong> {{ resultado.tc }}</p>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <h2>Função de Transferência</h2>
+        <div class="math-container">
+            $${{ resultado.ft_latex|safe }}$$
+        </div>
+    </div>
+
+    {% if not resultado.is_symbolic %}
+    <div class="section">
+        <h2>Análise de Sintonia e Estabilidade</h2>
+        <div class="math-container">
+            <h3>Função de Transferência do PID</h3>
+            $${{ resultado.pid_latex|safe }}$$
+        </div>
+        <div class="math-container">
+            <h3>Função de Transferência da Malha Fechada</h3>
+            $${{ resultado.mf_latex|safe }}$$
+        </div>
+
+        <h3>Parâmetros PID (Ziegler-Nichols)</h3>
+        <ul>
+            <li><strong>Kp:</strong> {{ resultado.Kp|round(4) }}</li>
+            <li><strong>Ki:</strong> {{ resultado.Ki|round(4) }}</li>
+            <li><strong>Kd:</strong> {{ resultado.Kd|round(4) }}</li>
+        </ul>
+
+        {% if resultado.routh_table and resultado.routh_table|length > 0 %}
+        <h3>Tabela de Routh</h3>
+        <table class="table">
+            <tbody>
+                {% for linha in resultado.routh_table %}
+                    <tr>
+                        {% for item in linha %}
+                            <td>{{ item|round(4) if item is not none }}</td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="section">
+        <h2>Gráficos</h2>
+        {% if not resultado.is_symbolic %}
+        <p><strong>Resposta ao Degrau - Malha Fechada:</strong></p>
+        <img src="{{ full_path }}{{ url_for('static', filename='resposta_malha_fechada.png') }}" alt="Resposta Malha Fechada" />
+        <p><strong>Diagrama de Polos e Zeros:</strong></p>
+        <img src="{{ full_path }}{{ url_for('static', filename='polos_zeros.png') }}" alt="Diagrama de Polos e Zeros" />
+        {% endif %}
+    </div>
+</body>
+</html>

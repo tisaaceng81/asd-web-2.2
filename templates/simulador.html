@@ -359,6 +359,17 @@
                 <p class="error">Não foi possível gerar o Diagrama de Polos e Zeros.</p>
                 {% endif %}
             {% endif %}
+            
+            <form method="POST" action="{{ url_for('gerar_pdf') }}" id="gerarPdfForm">
+                <input type="hidden" name="edo" value="{{ request.form.get('edo', '') }}">
+                <input type="hidden" name="entrada" value="{{ request.form.get('entrada', '') }}">
+                <input type="hidden" name="saida" value="{{ request.form.get('saida', '') }}">
+                <input type="hidden" name="metodo_sintonia" value="{{ request.form.get('metodo_sintonia', '') }}">
+                <input type="hidden" name="kc" value="{{ request.form.get('kc', '') }}">
+                <input type="hidden" name="tc" value="{{ request.form.get('tc', '') }}">
+                <button type="submit" style="background-color: #28a745; margin-top: 20px;">Gerar Relatório PDF</button>
+            </form>
+
         {% endif %}
     </div>
 
