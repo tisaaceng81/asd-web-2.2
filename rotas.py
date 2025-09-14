@@ -8,7 +8,7 @@ from io import BytesIO
 from funcoes_auxiliares import (
     parse_edo, ft_to_latex, resposta_degrau, estima_LT, sintonia_ziegler_nichols,
     sintonia_oscilacao_forcada, cria_pid_tf, malha_fechada_tf, salvar_grafico_resposta,
-    plot_polos_zeros, flatten_and_convert, tabela_routh
+    plot_polos_zeros, flatten_and_convert, tabela_routh, salvar_eq_latex
 )
 
 app = Flask(__name__)
@@ -316,11 +316,14 @@ def gerar_pdf():
 
         Ls_expr, FT, has_symbolic_coeffs = parse_edo(edo, entrada, saida)
         
+        # Gera as imagens das equações LaTeX
+        ft_img_path = salvar_eq_latex(ft_to_latex(Ls_expr), 'ft_expr')
+        
         resultado_pdf = {
             'edo': edo,
             'entrada': entrada,
             'saida': saida,
-            'ft_latex': ft_to_latex(Ls_expr),
+            'ft_img': ft_img_path,
             'method': metodo_sintonia,
             'is_symbolic': has_symbolic_coeffs
         }
@@ -344,14 +347,16 @@ def gerar_pdf():
             pid = cria_pid_tf(Kp, Ki, Kd)
             mf = malha_fechada_tf(FT, pid)
 
-            t_closed, y_closed = resposta_degrau(mf)
-
             den_coefs = flatten_and_convert(mf.den[0])
             routh_table = tabela_routh(den_coefs)
 
+            # Gera as imagens das equações do PID e Malha Fechada
+            pid_img_path = salvar_eq_latex(ft_to_latex(pid), 'pid_expr')
+            mf_img_path = salvar_eq_latex(ft_to_latex(mf), 'mf_expr')
+
             resultado_pdf.update({
-                'pid_latex': ft_to_latex(pid),
-                'mf_latex': ft_to_latex(mf),
+                'pid_img': pid_img_path,
+                'mf_img': mf_img_path,
                 'Kp': Kp,
                 'Ki': Ki,
                 'Kd': Kd,
