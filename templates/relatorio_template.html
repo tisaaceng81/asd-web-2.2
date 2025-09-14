@@ -3,8 +3,6 @@
 <head>
     <meta charset="UTF-8" />
     <title>Relatório do Simulador</title>
-    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
         h1, h2, h3 { color: #007bff; text-align: center; }
@@ -43,7 +41,7 @@
     <div class="section">
         <h2>Função de Transferência</h2>
         <div class="math-container">
-            $${{ resultado.ft_latex|safe }}$$
+            <img src="{{ full_path }}{{ resultado.ft_img }}" alt="Função de Transferência" />
         </div>
     </div>
 
@@ -52,11 +50,11 @@
         <h2>Análise de Sintonia e Estabilidade</h2>
         <div class="math-container">
             <h3>Função de Transferência do PID</h3>
-            $${{ resultado.pid_latex|safe }}$$
+            <img src="{{ full_path }}{{ resultado.pid_img }}" alt="Função de Transferência do PID" />
         </div>
         <div class="math-container">
             <h3>Função de Transferência da Malha Fechada</h3>
-            $${{ resultado.mf_latex|safe }}$$
+            <img src="{{ full_path }}{{ resultado.mf_img }}" alt="Função de Transferência da Malha Fechada" />
         </div>
 
         <h3>Parâmetros PID (Ziegler-Nichols)</h3>
